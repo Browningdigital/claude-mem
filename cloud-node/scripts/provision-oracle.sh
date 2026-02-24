@@ -15,40 +15,62 @@ set -euo pipefail
 # ──────────────────────────────────────────────
 # CONFIGURE THESE — get from Oracle Cloud Console
 # ──────────────────────────────────────────────
-COMPARTMENT_ID=""          # OCI Console → Identity → Compartments → root compartment OCID
-AVAILABILITY_DOMAIN=""     # OCI Console → Compute → Availability Domains (e.g., "Iztk:US-ASHBURN-AD-1")
-SUBNET_ID=""               # OCI Console → Networking → VCN → Subnet OCID
-IMAGE_ID=""                # Ubuntu 22.04 Minimal aarch64 — find at: OCI Console → Compute → Images → filter "Ubuntu" + "aarch64"
-SSH_PUBLIC_KEY_FILE="$HOME/.ssh/id_rsa.pub"
+COMPARTMENT_ID="${OCI_COMPARTMENT_ID:-}"           # OCI Console → Identity → Compartments → root compartment OCID
+AVAILABILITY_DOMAIN="${OCI_AVAILABILITY_DOMAIN:-}" # OCI Console → Compute → Availability Domains (e.g., "NvCA:US-CHICAGO-1-AD-1")
+SUBNET_ID="${OCI_SUBNET_ID:-}"                     # OCI Console → Networking → VCN → Subnet OCID
+IMAGE_ID="${OCI_IMAGE_ID:-}"                        # Ubuntu 24.04 Minimal aarch64 — find at: OCI Console → Compute → Images → filter "Ubuntu" + "aarch64"
+SSH_PUBLIC_KEY_FILE="${OCI_SSH_KEY_FILE:-$HOME/.ssh/id_rsa.pub}"
 
 # Instance spec (Always Free ARM maximums)
 SHAPE="VM.Standard.A1.Flex"
-OCPUS=4
-MEMORY_GB=24
-BOOT_VOLUME_GB=100         # Free tier allows up to 200GB total (can use 2x100GB)
-DISPLAY_NAME="browning-cloud-node"
+OCPUS="${OCI_OCPUS:-4}"
+MEMORY_GB="${OCI_MEMORY_GB:-24}"
+BOOT_VOLUME_GB="${OCI_BOOT_VOLUME_GB:-100}"   # Free tier allows up to 200GB total (can use 2x100GB)
+DISPLAY_NAME="${OCI_DISPLAY_NAME:-browning-cloud-node}"
 
 # Retry config
-RETRY_INTERVAL=60          # seconds between attempts
-MAX_RETRIES=0              # 0 = unlimited (keep trying until success)
+RETRY_INTERVAL="${OCI_RETRY_INTERVAL:-45}"    # seconds between attempts
+MAX_RETRIES="${OCI_MAX_RETRIES:-0}"           # 0 = unlimited (keep trying until success)
 LOG_FILE="/tmp/oracle-provision.log"
+
+# Multi-AD cycling — tries all ADs in the region before sleeping
+CYCLE_ADS="${OCI_CYCLE_ADS:-true}"
 
 # ──────────────────────────────────────────────
 # Validation
 # ──────────────────────────────────────────────
-if [[ -z "$COMPARTMENT_ID" || -z "$AVAILABILITY_DOMAIN" || -z "$SUBNET_ID" || -z "$IMAGE_ID" ]]; then
-    echo "ERROR: Fill in COMPARTMENT_ID, AVAILABILITY_DOMAIN, SUBNET_ID, and IMAGE_ID before running."
+# Auto-detect ADs if cycling enabled and no specific AD set
+if [[ "$CYCLE_ADS" == "true" && -z "$AVAILABILITY_DOMAIN" ]]; then
+    echo "Auto-detecting availability domains..."
+    AD_LIST=$(oci iam availability-domain list --compartment-id "$COMPARTMENT_ID" 2>/dev/null \
+        | python3 -c "import sys,json; [print(d['name']) for d in json.load(sys.stdin)['data']]" 2>/dev/null) || true
+    if [[ -n "$AD_LIST" ]]; then
+        mapfile -t ADS <<< "$AD_LIST"
+        echo "Found ${#ADS[@]} availability domains: ${ADS[*]}"
+    else
+        echo "ERROR: Could not auto-detect ADs. Set AVAILABILITY_DOMAIN manually."
+        exit 1
+    fi
+elif [[ -n "$AVAILABILITY_DOMAIN" ]]; then
+    ADS=("$AVAILABILITY_DOMAIN")
+else
+    echo "ERROR: Set OCI_AVAILABILITY_DOMAIN or OCI_COMPARTMENT_ID for auto-detect."
+    exit 1
+fi
+
+if [[ -z "$COMPARTMENT_ID" || -z "$SUBNET_ID" || -z "$IMAGE_ID" ]]; then
+    echo "ERROR: Fill in COMPARTMENT_ID, SUBNET_ID, and IMAGE_ID before running."
     echo ""
-    echo "To find these values:"
-    echo "  COMPARTMENT_ID:     OCI Console → Identity & Security → Compartments → copy root OCID"
-    echo "  AVAILABILITY_DOMAIN: OCI Console → Compute → Instances → Create Instance → look at AD dropdown"
-    echo "  SUBNET_ID:          OCI Console → Networking → Virtual Cloud Networks → your VCN → Subnets → copy OCID"
-    echo "  IMAGE_ID:           OCI Console → Compute → Images → search 'Canonical Ubuntu 22.04 Minimal aarch64'"
+    echo "Set via environment variables or edit this script:"
+    echo "  OCI_COMPARTMENT_ID     OCI Console → Identity & Security → Compartments → root OCID"
+    echo "  OCI_SUBNET_ID          OCI Console → Networking → VCN → Subnet OCID"
+    echo "  OCI_IMAGE_ID           OCI Console → Compute → Images → 'Canonical Ubuntu 24.04 Minimal aarch64'"
+    echo "  OCI_AVAILABILITY_DOMAIN  (optional — auto-detected if OCI_CYCLE_ADS=true)"
     exit 1
 fi
 
 if ! command -v oci &> /dev/null; then
-    echo "ERROR: OCI CLI not installed. Install from: https://docs.oracle.com/en-us/iaas/Content/API/SDKDocs/cliinstall.htm"
+    echo "ERROR: OCI CLI not installed. Install: pip install oci-cli"
     exit 1
 fi
 
@@ -60,67 +82,81 @@ fi
 
 SSH_KEY=$(cat "$SSH_PUBLIC_KEY_FILE")
 
+# Cloud-init user data (if cloud-init.sh exists next to this script)
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+CLOUD_INIT_FILE="${OCI_CLOUD_INIT:-$SCRIPT_DIR/cloud-init.sh}"
+METADATA="{\"ssh_authorized_keys\": \"$SSH_KEY\"}"
+if [[ -f "$CLOUD_INIT_FILE" ]]; then
+    CLOUD_INIT_B64=$(base64 -w 0 "$CLOUD_INIT_FILE")
+    METADATA="{\"ssh_authorized_keys\": \"$SSH_KEY\", \"user_data\": \"$CLOUD_INIT_B64\"}"
+    echo "Cloud-init script: $CLOUD_INIT_FILE"
+fi
+
 # ──────────────────────────────────────────────
-# Provision loop
+# Provision loop — cycles all ADs
 # ──────────────────────────────────────────────
 attempt=0
 echo "$(date): Starting Oracle Cloud ARM provisioner" | tee -a "$LOG_FILE"
 echo "Shape: $SHAPE ($OCPUS OCPUs, ${MEMORY_GB}GB RAM, ${BOOT_VOLUME_GB}GB boot)" | tee -a "$LOG_FILE"
-echo "Retry interval: ${RETRY_INTERVAL}s" | tee -a "$LOG_FILE"
+echo "ADs: ${ADS[*]}" | tee -a "$LOG_FILE"
+echo "Retry interval: ${RETRY_INTERVAL}s between each AD attempt" | tee -a "$LOG_FILE"
 echo "" | tee -a "$LOG_FILE"
 
 while true; do
-    attempt=$((attempt + 1))
+    for AD in "${ADS[@]}"; do
+        attempt=$((attempt + 1))
 
-    if [[ $MAX_RETRIES -gt 0 && $attempt -gt $MAX_RETRIES ]]; then
-        echo "$(date): Max retries ($MAX_RETRIES) reached. Giving up." | tee -a "$LOG_FILE"
-        exit 1
-    fi
+        if [[ $MAX_RETRIES -gt 0 && $attempt -gt $MAX_RETRIES ]]; then
+            echo "$(date): Max retries ($MAX_RETRIES) reached. Giving up." | tee -a "$LOG_FILE"
+            exit 1
+        fi
 
-    echo "$(date): Attempt #$attempt..." | tee -a "$LOG_FILE"
+        echo "$(date): Attempt #$attempt — $AD" | tee -a "$LOG_FILE"
 
-    RESULT=$(oci compute instance launch \
-        --compartment-id "$COMPARTMENT_ID" \
-        --availability-domain "$AVAILABILITY_DOMAIN" \
-        --shape "$SHAPE" \
-        --shape-config "{\"ocpus\": $OCPUS, \"memoryInGBs\": $MEMORY_GB}" \
-        --image-id "$IMAGE_ID" \
-        --subnet-id "$SUBNET_ID" \
-        --boot-volume-size-in-gbs "$BOOT_VOLUME_GB" \
-        --display-name "$DISPLAY_NAME" \
-        --metadata "{\"ssh_authorized_keys\": \"$SSH_KEY\"}" \
-        --assign-public-ip true \
-        2>&1) || true
+        RESULT=$(oci compute instance launch \
+            --compartment-id "$COMPARTMENT_ID" \
+            --availability-domain "$AD" \
+            --shape "$SHAPE" \
+            --shape-config "{\"ocpus\": $OCPUS, \"memoryInGBs\": $MEMORY_GB}" \
+            --image-id "$IMAGE_ID" \
+            --subnet-id "$SUBNET_ID" \
+            --boot-volume-size-in-gbs "$BOOT_VOLUME_GB" \
+            --display-name "$DISPLAY_NAME" \
+            --metadata "$METADATA" \
+            --assign-public-ip true \
+            2>&1) || true
 
-    if echo "$RESULT" | grep -q '"lifecycle-state"'; then
-        INSTANCE_ID=$(echo "$RESULT" | python3 -c "import sys,json; print(json.load(sys.stdin)['data']['id'])")
-        PUBLIC_IP=$(echo "$RESULT" | python3 -c "import sys,json; d=json.load(sys.stdin)['data']; print(d.get('primary-public-ip','pending'))" 2>/dev/null || echo "pending")
+        if echo "$RESULT" | grep -q '"lifecycle-state"'; then
+            INSTANCE_ID=$(echo "$RESULT" | python3 -c "import sys,json; print(json.load(sys.stdin)['data']['id'])")
+            PUBLIC_IP=$(echo "$RESULT" | python3 -c "import sys,json; d=json.load(sys.stdin)['data']; print(d.get('primary-public-ip','pending'))" 2>/dev/null || echo "pending")
 
-        echo "" | tee -a "$LOG_FILE"
-        echo "========================================" | tee -a "$LOG_FILE"
-        echo "  INSTANCE CREATED SUCCESSFULLY!" | tee -a "$LOG_FILE"
-        echo "========================================" | tee -a "$LOG_FILE"
-        echo "Instance ID: $INSTANCE_ID" | tee -a "$LOG_FILE"
-        echo "Public IP:   $PUBLIC_IP" | tee -a "$LOG_FILE"
-        echo "" | tee -a "$LOG_FILE"
-        echo "If IP shows 'pending', get it with:" | tee -a "$LOG_FILE"
-        echo "  oci compute instance list-vnics --instance-id $INSTANCE_ID | python3 -c \"import sys,json; print(json.load(sys.stdin)['data'][0]['public-ip'])\"" | tee -a "$LOG_FILE"
-        echo "" | tee -a "$LOG_FILE"
-        echo "SSH in with:" | tee -a "$LOG_FILE"
-        echo "  ssh ubuntu@<PUBLIC_IP>" | tee -a "$LOG_FILE"
-        echo "" | tee -a "$LOG_FILE"
-        echo "Then run the bootstrap script:" | tee -a "$LOG_FILE"
-        echo "  curl -fsSL https://raw.githubusercontent.com/Browningdigital/claude-mem/main/cloud-node/scripts/bootstrap.sh | bash" | tee -a "$LOG_FILE"
-        exit 0
-    fi
+            echo "" | tee -a "$LOG_FILE"
+            echo "========================================" | tee -a "$LOG_FILE"
+            echo "  INSTANCE CREATED SUCCESSFULLY!" | tee -a "$LOG_FILE"
+            echo "========================================" | tee -a "$LOG_FILE"
+            echo "Instance ID: $INSTANCE_ID" | tee -a "$LOG_FILE"
+            echo "Public IP:   $PUBLIC_IP" | tee -a "$LOG_FILE"
+            echo "AD:          $AD" | tee -a "$LOG_FILE"
+            echo "" | tee -a "$LOG_FILE"
+            echo "If IP shows 'pending', get it with:" | tee -a "$LOG_FILE"
+            echo "  oci compute instance list-vnics --instance-id $INSTANCE_ID | python3 -c \"import sys,json; print(json.load(sys.stdin)['data'][0]['public-ip'])\"" | tee -a "$LOG_FILE"
+            echo "" | tee -a "$LOG_FILE"
+            echo "SSH in with:" | tee -a "$LOG_FILE"
+            echo "  ssh ubuntu@<PUBLIC_IP>" | tee -a "$LOG_FILE"
+            echo "" | tee -a "$LOG_FILE"
+            echo "Then run the bootstrap script:" | tee -a "$LOG_FILE"
+            echo "  curl -fsSL https://raw.githubusercontent.com/Browningdigital/claude-mem/main/cloud-node/scripts/bootstrap.sh | bash" | tee -a "$LOG_FILE"
+            exit 0
+        fi
 
-    if echo "$RESULT" | grep -qi "out of host capacity\|out of capacity\|InternalError\|LimitExceeded"; then
-        echo "$(date): Out of capacity. Retrying in ${RETRY_INTERVAL}s..." | tee -a "$LOG_FILE"
-    else
-        echo "$(date): Unexpected error:" | tee -a "$LOG_FILE"
-        echo "$RESULT" | tee -a "$LOG_FILE"
-        echo "Retrying in ${RETRY_INTERVAL}s..." | tee -a "$LOG_FILE"
-    fi
+        if echo "$RESULT" | grep -qi "out of host capacity\|out of capacity\|InternalError\|LimitExceeded"; then
+            echo "$(date): Out of capacity on $AD. Next AD in ${RETRY_INTERVAL}s..." | tee -a "$LOG_FILE"
+        else
+            echo "$(date): Unexpected error on $AD:" | tee -a "$LOG_FILE"
+            echo "$RESULT" | tee -a "$LOG_FILE"
+            echo "Next AD in ${RETRY_INTERVAL}s..." | tee -a "$LOG_FILE"
+        fi
 
-    sleep "$RETRY_INTERVAL"
+        sleep "$RETRY_INTERVAL"
+    done
 done
