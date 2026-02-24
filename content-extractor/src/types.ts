@@ -28,10 +28,8 @@ export interface Env {
   AI: Ai;
   SUPABASE_URL: string;
   SUPABASE_KEY: string;
-  JINA_API_KEY: string;
-  DIFFBOT_TOKEN: string;
-  GROQ_API_KEY: string;
-  META_THREADS_TOKEN: string;
+  JINA_API_KEY?: string;   // Optional — Jina works without a key at ~20 RPM
+  GROQ_API_KEY?: string;   // Optional — free signup, 8 hrs/day transcription
 }
 
 export interface CachedExtraction {

@@ -1,4 +1,6 @@
 import type { Env } from '../types';
+import { Readability } from '@mozilla/readability';
+import { parseHTML } from 'linkedom';
 
 interface HandlerResult {
   title: string | null;
@@ -8,52 +10,58 @@ interface HandlerResult {
   paywalled?: boolean;
 }
 
-export async function extractWebpage(url: string, env: Env): Promise<HandlerResult> {
-  // Primary: Jina Reader
-  try {
-    const res = await fetch(`https://r.jina.ai/${url}`, {
-      headers: {
-        Authorization: `Bearer ${env.JINA_API_KEY}`,
-        'X-Return-Format': 'markdown',
-      },
-    });
+function jinaHeaders(env: Env): Record<string, string> {
+  const headers: Record<string, string> = { 'X-Return-Format': 'markdown' };
+  if (env.JINA_API_KEY) headers['Authorization'] = `Bearer ${env.JINA_API_KEY}`;
+  return headers;
+}
 
+export async function extractWebpage(url: string, env: Env): Promise<HandlerResult> {
+  // Primary: Jina Reader (free, ~20 RPM without key, 100 RPM with free key)
+  try {
+    const res = await fetch(`https://r.jina.ai/${url}`, { headers: jinaHeaders(env) });
     if (res.ok) {
       const text = await res.text();
-      // Jina returns markdown directly
-      const titleMatch = text.match(/^#\s+(.+)$/m);
-      return {
-        title: titleMatch?.[1] || null,
-        content: text,
-        metadata: { extractor: 'jina', status: res.status },
-      };
+      if (text && text.length > 100) {
+        const titleMatch = text.match(/^#\s+(.+)$/m);
+        return {
+          title: titleMatch?.[1] || null,
+          content: text,
+          metadata: { extractor: 'jina' },
+        };
+      }
     }
   } catch {
-    // Fall through to Diffbot
+    // Fall through to in-Worker Readability
   }
 
-  // Fallback: Diffbot
+  // Fallback: linkedom + @mozilla/readability (runs entirely in-Worker, zero external calls)
   try {
-    const res = await fetch(
-      `https://api.diffbot.com/v3/analyze?token=${env.DIFFBOT_TOKEN}&url=${encodeURIComponent(url)}`
-    );
-
+    const res = await fetch(url, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (compatible; ContentExtractor/1.0)',
+        Accept: 'text/html',
+      },
+      redirect: 'follow',
+    });
     if (res.ok) {
-      const data = (await res.json()) as {
-        objects?: Array<{ title?: string; text?: string; type?: string }>;
-      };
-      const obj = data.objects?.[0];
-      return {
-        title: obj?.title || null,
-        content: obj?.text || null,
-        metadata: { extractor: 'diffbot', type: obj?.type },
-      };
+      const html = await res.text();
+      const { document } = parseHTML(html);
+      const reader = new Readability(document as any);
+      const article = reader.parse();
+      if (article?.textContent && article.textContent.length > 100) {
+        return {
+          title: article.title || null,
+          content: article.textContent,
+          metadata: { extractor: 'readability', length: article.length },
+        };
+      }
     }
   } catch {
-    // Fall through to error
+    // Fall through to paywall bypass
   }
 
-  // Fallback: Paywall bypass chain (Archive.today → Freedium → retry Jina)
+  // Fallback: Paywall bypass chain (Archive.today → Freedium)
   try {
     const { extractPaywalled } = await import('./paywall');
     return await extractPaywalled(url, env);
@@ -65,7 +73,7 @@ export async function extractWebpage(url: string, env: Env): Promise<HandlerResu
     title: null,
     content: null,
     metadata: {},
-    error: 'All extraction methods failed (Jina, Diffbot, paywall bypass)',
+    error: 'All extraction methods failed (Jina, Readability, paywall bypass)',
     paywalled: true,
   };
 }

@@ -8,14 +8,11 @@ interface HandlerResult {
 }
 
 export async function extractLinkedin(url: string, env: Env): Promise<HandlerResult> {
-  // Jina Reader — works on public company pages, job listings, some public posts
+  // Jina Reader (free, no key needed) — works on public company pages, job listings, some public posts
   try {
-    const res = await fetch(`https://r.jina.ai/${url}`, {
-      headers: {
-        Authorization: `Bearer ${env.JINA_API_KEY}`,
-        'X-Return-Format': 'markdown',
-      },
-    });
+    const headers: Record<string, string> = { 'X-Return-Format': 'markdown' };
+    if (env.JINA_API_KEY) headers['Authorization'] = `Bearer ${env.JINA_API_KEY}`;
+    const res = await fetch(`https://r.jina.ai/${url}`, { headers });
 
     if (res.ok) {
       const text = await res.text();

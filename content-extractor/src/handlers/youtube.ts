@@ -13,7 +13,6 @@ function extractVideoId(url: string): string | null {
     return u.pathname.slice(1).split('/')[0];
   }
   if (u.hostname.includes('youtube.com')) {
-    // Handle /watch?v=, /shorts/, /live/
     const v = u.searchParams.get('v');
     if (v) return v;
     const pathMatch = u.pathname.match(/\/(shorts|live|embed)\/([a-zA-Z0-9_-]+)/);
@@ -22,13 +21,13 @@ function extractVideoId(url: string): string | null {
   return null;
 }
 
-export async function extractYoutube(url: string, env: Env): Promise<HandlerResult> {
+export async function extractYoutube(url: string, _env: Env): Promise<HandlerResult> {
   const videoId = extractVideoId(url);
   if (!videoId) {
     return { title: null, content: null, metadata: {}, error: 'Could not extract YouTube video ID' };
   }
 
-  // Primary: youtube-transcript (Innertube API)
+  // youtube-transcript calls YouTube's Innertube API directly — no API key needed
   try {
     const { YoutubeTranscript } = await import('youtube-transcript');
     const transcript = await YoutubeTranscript.fetchTranscript(videoId);
@@ -45,32 +44,13 @@ export async function extractYoutube(url: string, env: Env): Promise<HandlerResu
       };
     }
   } catch {
-    // Fall through to Supadata
-  }
-
-  // Fallback: Supadata API
-  try {
-    const res = await fetch(`https://api.supadata.ai/v1/youtube/transcript?videoId=${videoId}&text=true`, {
-      headers: { 'x-api-key': env.GROQ_API_KEY }, // Reusing key slot — update if separate key exists
-    });
-    if (res.ok) {
-      const data = (await res.json()) as { content?: string };
-      if (data.content) {
-        return {
-          title: null,
-          content: data.content,
-          metadata: { extractor: 'supadata', videoId },
-        };
-      }
-    }
-  } catch {
-    // Fall through
+    // Innertube API may be blocked or video has no captions
   }
 
   return {
     title: null,
     content: null,
     metadata: { videoId },
-    error: 'No captions available. Paste audio file URL for transcription.',
+    error: 'No captions available for this video. If you have the audio file URL, paste that instead for transcription.',
   };
 }

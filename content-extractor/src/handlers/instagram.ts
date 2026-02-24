@@ -1,4 +1,5 @@
 import type { Env } from '../types';
+import { parseHTML } from 'linkedom';
 
 interface HandlerResult {
   title: string | null;
@@ -8,64 +9,90 @@ interface HandlerResult {
 }
 
 export async function extractInstagram(url: string, env: Env): Promise<HandlerResult> {
-  // Instagram oEmbed via Facebook Graph API
+  // Primary: Fetch HTML and parse og: meta tags
+  // Instagram pages include og:description (caption) and og:image (thumbnail) even without login
   try {
-    const token = env.META_THREADS_TOKEN; // Reuse Meta token
-    const res = await fetch(
-      `https://graph.facebook.com/v18.0/instagram_oembed?url=${encodeURIComponent(url)}&access_token=${token}`
-    );
+    const res = await fetch(url, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)',
+        Accept: 'text/html',
+      },
+      redirect: 'follow',
+    });
 
     if (res.ok) {
-      const data = (await res.json()) as {
-        title?: string;
-        author_name?: string;
-        thumbnail_url?: string;
-        html?: string;
-      };
+      const html = await res.text();
+      const { document } = parseHTML(html);
 
-      let content = data.title || '';
+      const ogDesc = document.querySelector('meta[property="og:description"]')?.getAttribute('content');
+      const ogTitle = document.querySelector('meta[property="og:title"]')?.getAttribute('content');
+      const ogImage = document.querySelector('meta[property="og:image"]')?.getAttribute('content');
 
-      // If there's a thumbnail, try to describe it with CF AI Vision
-      if (data.thumbnail_url && env.AI) {
+      let content = ogDesc || '';
+
+      // If there's an og:image, try to describe it with CF AI Vision (free tier)
+      if (ogImage && env.AI) {
         try {
-          const imgRes = await fetch(data.thumbnail_url);
+          const imgRes = await fetch(ogImage);
           if (imgRes.ok) {
             const imgBytes = await imgRes.arrayBuffer();
-            const base64 = Buffer.from(imgBytes).toString('base64');
-            const contentType = imgRes.headers.get('content-type') || 'image/jpeg';
-            const dataUrl = `data:${contentType};base64,${base64}`;
+            const sizeMB = imgBytes.byteLength / (1024 * 1024);
+            if (sizeMB <= 5) {
+              const base64 = Buffer.from(imgBytes).toString('base64');
+              const contentType = imgRes.headers.get('content-type') || 'image/jpeg';
+              const dataUrl = `data:${contentType};base64,${base64}`;
 
-            const aiResult = (await env.AI.run('@cf/meta/llama-3.2-11b-vision-instruct', {
-              messages: [
-                {
-                  role: 'user',
-                  content: [
-                    { type: 'image', image: dataUrl },
-                    { type: 'text', text: 'Describe this Instagram post image in detail. Transcribe any visible text.' },
-                  ],
-                },
-              ],
-            })) as { response?: string };
+              const aiResult = (await env.AI.run('@cf/meta/llama-3.2-11b-vision-instruct', {
+                messages: [
+                  {
+                    role: 'user',
+                    content: [
+                      { type: 'image', image: dataUrl },
+                      { type: 'text', text: 'Describe this Instagram post image in detail. Transcribe any visible text.' },
+                    ],
+                  },
+                ],
+              })) as { response?: string };
 
-            if (aiResult.response) {
-              content += `\n\n**Image Description:** ${aiResult.response}`;
+              if (aiResult.response) {
+                content += `\n\n**Image Description:** ${aiResult.response}`;
+              }
             }
           }
         } catch {
-          // Image description failed, continue with text only
+          // Vision failed, continue with text only
         }
       }
 
-      return {
-        title: `Instagram post by ${data.author_name || 'Unknown'}`,
-        content: content || 'No caption available (Instagram requires login for full content)',
-        metadata: {
-          extractor: 'instagram-oembed',
-          author: data.author_name,
-          hasThumbnail: !!data.thumbnail_url,
-          partial: true,
-        },
-      };
+      if (content.length > 10) {
+        return {
+          title: ogTitle || 'Instagram Post',
+          content,
+          metadata: {
+            extractor: 'instagram-og-meta',
+            hasImage: !!ogImage,
+          },
+        };
+      }
+    }
+  } catch {
+    // Fall through to Jina
+  }
+
+  // Fallback: Jina Reader (free)
+  try {
+    const headers: Record<string, string> = { 'X-Return-Format': 'markdown' };
+    if (env.JINA_API_KEY) headers['Authorization'] = `Bearer ${env.JINA_API_KEY}`;
+    const res = await fetch(`https://r.jina.ai/${url}`, { headers });
+    if (res.ok) {
+      const text = await res.text();
+      if (text && text.length > 50) {
+        return {
+          title: 'Instagram Post',
+          content: text,
+          metadata: { extractor: 'jina' },
+        };
+      }
     }
   } catch {
     // Fall through
@@ -74,7 +101,7 @@ export async function extractInstagram(url: string, env: Env): Promise<HandlerRe
   return {
     title: null,
     content: null,
-    metadata: { partial: true },
-    error: 'Instagram extraction failed — full caption extraction requires Instaloader (v2 feature)',
+    metadata: {},
+    error: 'Instagram extraction limited — full captions require login. og:description and image description extracted where available.',
   };
 }

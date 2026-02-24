@@ -1,5 +1,4 @@
 import type { Env } from '../types';
-import { extractWebpage } from './webpage';
 
 interface HandlerResult {
   title: string | null;
@@ -166,11 +165,11 @@ async function tryFreedium(url: string): Promise<HandlerResult | null> {
  * Cascade:
  *  1. Archive.today — general-purpose cached article lookup
  *  2. Freedium — Medium-specific paywall bypass (only tried for Medium URLs)
- *  3. Jina Reader — fall back to the existing webpage handler
  *
+ * Called as a last resort from extractWebpage — does NOT call back into extractWebpage.
  * Sets `paywalled: true` when no strategy returns full content.
  */
-export async function extractPaywalled(url: string, env: Env): Promise<HandlerResult> {
+export async function extractPaywalled(url: string, _env: Env): Promise<HandlerResult> {
   // 1. Archive.today
   const archiveResult = await tryArchiveToday(url);
   if (archiveResult) return archiveResult;
@@ -181,17 +180,11 @@ export async function extractPaywalled(url: string, env: Env): Promise<HandlerRe
     if (freediumResult) return freediumResult;
   }
 
-  // 3. Fall back to existing webpage handler (Jina Reader / Diffbot)
-  const webpageResult = await extractWebpage(url, env);
-
-  // If the fallback also failed to get content, flag as paywalled
-  if (!webpageResult.content) {
-    return {
-      ...webpageResult,
-      paywalled: true,
-      error: webpageResult.error || 'All paywall bypass strategies failed',
-    };
-  }
-
-  return webpageResult;
+  return {
+    title: null,
+    content: null,
+    metadata: {},
+    paywalled: true,
+    error: 'All paywall bypass strategies failed (Archive.today, Freedium)',
+  };
 }

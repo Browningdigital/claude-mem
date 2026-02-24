@@ -36,14 +36,11 @@ export async function extractPdf(url: string, env: Env): Promise<HandlerResult> 
     // Fall through to Jina
   }
 
-  // Fallback: Jina Reader
+  // Fallback: Jina Reader (free, no key needed)
   try {
-    const res = await fetch(`https://r.jina.ai/${url}`, {
-      headers: {
-        Authorization: `Bearer ${env.JINA_API_KEY}`,
-        'X-Return-Format': 'markdown',
-      },
-    });
+    const headers: Record<string, string> = { 'X-Return-Format': 'markdown' };
+    if (env.JINA_API_KEY) headers['Authorization'] = `Bearer ${env.JINA_API_KEY}`;
+    const res = await fetch(`https://r.jina.ai/${url}`, { headers });
     if (res.ok) {
       const text = await res.text();
       return {
