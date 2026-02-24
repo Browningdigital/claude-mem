@@ -153,11 +153,16 @@ This is the one manual step — Claude Code needs a one-time auth.
 
 ---
 
-## Phase 6: Create iOS Shortcut (5 min)
+## Phase 6: Bookmark the Dashboard (1 min)
 
-See `IOS-SHORTCUT.md` for step-by-step Shortcut creation.
+The dispatcher Worker has a built-in mobile dashboard.
 
-After setup: **"Hey Siri, Claude Task"** → type prompt → done.
+1. Open Safari → go to your Worker URL (e.g., `cloud-node-dispatcher.devin-b58.workers.dev`)
+2. Enter your `TASK_AUTH_TOKEN` to log in
+3. Tap the **Share** button → **Add to Home Screen**
+4. Name it: `Cloud Node`
+
+Now you have a Home Screen app for dispatching tasks — type a prompt, hit Send, watch status update in real-time.
 
 ---
 
@@ -170,8 +175,8 @@ iPhone Safari                    Cloudflare                     Oracle ARM (24GB
 code.browningdigital.com  ──→  Tunnel + Access  ──→  code-server (IDE)
 term.browningdigital.com  ──→  Tunnel + Access  ──→  ttyd (terminal)
 
-"Hey Siri, Claude Task"   ──→  Dispatcher Worker ──→  Supabase queue
-                                                         ↓
+Cloud Node dashboard      ──→  Dispatcher Worker ──→  Supabase queue
+(Home Screen bookmark)                                    ↓
                                                       Task Watcher
                                                          ↓
                                                       Claude Code (headless)
