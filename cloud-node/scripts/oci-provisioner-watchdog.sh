@@ -31,6 +31,9 @@ fi
 # Daemon is dead — resurrect it
 echo "$(date): WATCHDOG — Daemon dead, restarting" >> "$LOGFILE"
 
+# Clear stale lock and PID files so flock doesn't block the new daemon
+rm -f /tmp/oci-provisioner.lock "$PIDFILE"
+
 # Source env file if it exists (contains OCI_* vars from launcher)
 if [[ -f "$ENV_FILE" ]]; then
     set -a
