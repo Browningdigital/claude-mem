@@ -20,8 +20,8 @@ exec > /var/log/cloud-init-browning.log 2>&1
 # ──────────────────────────────────────────────
 # FILL THESE IN BEFORE PASTING INTO ORACLE
 # ──────────────────────────────────────────────
-TUNNEL_TOKEN="PASTE_YOUR_TUNNEL_TOKEN_HERE"
-CODE_SERVER_PASSWORD="PICK_A_PASSWORD"
+TUNNEL_TOKEN="eyJhIjoiYjU4ZGRmMzhhZWViYjc3YzBlYzRjODI5ZWE0MmFkZjUiLCJ0IjoiNjgwMGMyZTctZjI2Yi00MDgxLThmNWUtYTk5NGI4YWMzMWE2IiwicyI6IkFnQXNnNDVEUmlUbTVJeWM5L3o2dDdqYnN5VEsrcndVa2l2dXhKYVRCZ3M9In0="
+CODE_SERVER_PASSWORD="PICK_A_PASSWORD"   # ← Change this to any password you want
 # ──────────────────────────────────────────────
 
 AGENT_USER="agent"
