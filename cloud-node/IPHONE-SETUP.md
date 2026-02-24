@@ -17,14 +17,26 @@ Do this FIRST — you need the tunnel token before creating the Oracle instance.
 7. On the install page, find the **token** — it's the long string after `cloudflared service install`. **Copy this token** (long-press → Copy). You'll paste it into the Oracle cloud-init script.
 8. Click **Next** to configure public hostnames:
 
-   **Hostname 1 (IDE):**
-   - Subdomain: `code`
+   **Hostname 1 — Chat (your main interface):**
+   - Subdomain: `chat`
    - Domain: `browningdigital.com` (or your domain)
+   - Service Type: `HTTP`
+   - URL: `localhost:3000`
+
+   **Hostname 2 — Live Screen:**
+   - Click **Add a public hostname**
+   - Subdomain: `screen`
+   - Domain: `browningdigital.com`
+   - Service Type: `HTTP`
+   - URL: `localhost:6080`
+
+   **Hostname 3 — IDE (code-server):**
+   - Subdomain: `code`
+   - Domain: `browningdigital.com`
    - Service Type: `HTTP`
    - URL: `localhost:8080`
 
-   **Hostname 2 (Terminal):**
-   - Click **Add a public hostname**
+   **Hostname 4 — Terminal (ttyd):**
    - Subdomain: `term`
    - Domain: `browningdigital.com`
    - Service Type: `HTTP`
@@ -36,15 +48,15 @@ Do this FIRST — you need the tunnel token before creating the Oracle instance.
 
 10. Go to **Access** → **Applications** → **Add an application**
 11. Select **Self-hosted**
-12. Application name: `Cloud Node IDE`
-13. Application domain: `code.browningdigital.com`
+12. Application name: `Cloud Node`
+13. Application domain: `chat.browningdigital.com`
 14. Session duration: `24 hours`
 15. Click **Next** → Add a policy:
     - Policy name: `Allow Devin`
     - Action: `Allow`
     - Include: `Emails` → `devin@browningdigital.com`
 16. Save.
-17. **Repeat steps 10-16** for `term.browningdigital.com`
+17. **Repeat steps 10-16** for `screen.browningdigital.com`, `code.browningdigital.com`, `term.browningdigital.com`
 
 ---
 
@@ -103,7 +115,7 @@ The instance will take ~15 minutes to fully bootstrap.
 
 ---
 
-## Phase 4: Authenticate Claude Code (2 min)
+## Phase 4: Authenticate Claude Code + Start Services (2 min)
 
 This is the one manual step — Claude Code needs a one-time auth.
 
@@ -116,73 +128,55 @@ This is the one manual step — Claude Code needs a one-time auth.
 3. Claude Code will show a URL — open it in another Safari tab
 4. Log in with your Anthropic account (Claude Pro/Max)
 5. Once authenticated, press Ctrl+C to exit
-6. Start the task watcher:
+6. Start all services:
    ```bash
-   sudo systemctl start task-watcher
+   sudo systemctl start cloud-node-relay task-watcher
    ```
-
-**Done.** Your cloud node is fully operational.
+7. Get your relay login token:
+   ```bash
+   cat ~/node-status.json | jq -r .relay_token
+   ```
+   **Copy this token — you'll need it next.**
 
 ---
 
-## Phase 5: Deploy Task Dispatcher Worker (5 min from code-server terminal)
+## Phase 5: Open the Chat Interface (1 min)
 
-1. In code-server terminal:
-   ```bash
-   cd ~/claude-mem/cloud-node/worker
+1. Open Safari → go to `https://chat.browningdigital.com`
+2. Cloudflare Access → email OTP (same as before)
+3. Enter the **relay token** from the previous step
+4. You're in. Type a message to Claude Code — responses stream in real-time.
+5. Tap the **screen icon** (🖥) in the header to see a **live view of the VPS desktop**
+   - When Claude opens a browser (Playwright), you see it
+   - When files are edited, you see the desktop update
+   - Resize the screen panel with S/M/L buttons
+6. Tap **Share** → **Add to Home Screen** → name it `Cloud Node`
 
-   # Generate an auth token for the dispatcher
-   TASK_TOKEN=$(openssl rand -hex 32)
-   echo "Your task auth token: $TASK_TOKEN"
-   echo "SAVE THIS — you need it for the iOS Shortcut"
-
-   # Set secrets
-   npx wrangler secret put SUPABASE_URL
-   # paste: https://wcdyvukzlxxkgvxomaxr.supabase.co
-
-   npx wrangler secret put SUPABASE_KEY
-   # paste the service_role_key (it's in task-watcher.env)
-
-   npx wrangler secret put TASK_AUTH_TOKEN
-   # paste the $TASK_TOKEN you generated above
-
-   # Deploy
-   npx wrangler deploy
-   ```
-2. Note the Worker URL (e.g., `cloud-node-dispatcher.devin-b58.workers.dev`)
-
----
-
-## Phase 6: Bookmark the Dashboard (1 min)
-
-The dispatcher Worker has a built-in mobile dashboard.
-
-1. Open Safari → go to your Worker URL (e.g., `cloud-node-dispatcher.devin-b58.workers.dev`)
-2. Enter your `TASK_AUTH_TOKEN` to log in
-3. Tap the **Share** button → **Add to Home Screen**
-4. Name it: `Cloud Node`
-
-Now you have a Home Screen app for dispatching tasks — type a prompt, hit Send, watch status update in real-time.
+**Done.** You now have a full AI development environment controlled from your iPhone.
 
 ---
 
 ## How it all connects
 
 ```
-iPhone Safari                    Cloudflare                     Oracle ARM (24GB)
-─────────────                    ──────────                     ─────────────────
+iPhone Safari                    Cloudflare Tunnel              Oracle ARM (24GB)
+─────────────                    ─────────────────              ─────────────────
 
-code.browningdigital.com  ──→  Tunnel + Access  ──→  code-server (IDE)
-term.browningdigital.com  ──→  Tunnel + Access  ──→  ttyd (terminal)
+chat.browningdigital.com   ──→  Tunnel + Access  ──→  Chat Relay (port 3000)
+  Chat with Claude Code                                   ↕ WebSocket
+  See live screen view                                 Claude Code CLI
+  Manage sessions                                     (full Browning context)
 
-Cloud Node dashboard      ──→  Dispatcher Worker ──→  Supabase queue
-(Home Screen bookmark)                                    ↓
-                                                      Task Watcher
-                                                         ↓
-                                                      Claude Code (headless)
-                                                      + full Browning context
-                                                      + credentials
-                                                      + session logging
+screen.browningdigital.com ──→  Tunnel + Access  ──→  noVNC (port 6080)
+  Live desktop feed                                    ↕ VNC
+  Watch Playwright browsers                          Xvfb + Openbox
+  See file operations                                (virtual desktop)
+
+code.browningdigital.com   ──→  Tunnel + Access  ──→  code-server (port 8080)
+  Full VS Code IDE                                   (backup / manual work)
+
+term.browningdigital.com   ──→  Tunnel + Access  ──→  ttyd (port 7681)
+  Raw terminal                                       (emergency access)
 ```
 
 ---

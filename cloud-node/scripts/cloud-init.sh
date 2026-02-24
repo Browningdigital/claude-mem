@@ -140,6 +140,102 @@ sudo -u "$AGENT_USER" bash -c '
 '
 echo "$(date): Playwright installed."
 
+# ── Step 9b: noVNC + virtual desktop (live screen view from iPhone) ──
+DEBIAN_FRONTEND=noninteractive apt-get install -y \
+    x11vnc tigervnc-standalone-server openbox \
+    xterm dbus-x11 at-spi2-core
+
+# Install noVNC
+git clone https://github.com/novnc/noVNC.git /opt/noVNC 2>/dev/null || true
+git clone https://github.com/novnc/websockify.git /opt/noVNC/utils/websockify 2>/dev/null || true
+
+# Set VNC password for agent
+sudo -u "$AGENT_USER" bash -c '
+    mkdir -p ~/.vnc
+    echo "'${CODE_SERVER_PASSWORD}'" | vncpasswd -f > ~/.vnc/passwd
+    chmod 600 ~/.vnc/passwd
+'
+
+# Xvfb virtual display service (1280x720 for mobile-friendly viewing)
+cat > /etc/systemd/system/xvfb.service <<XVEOF
+[Unit]
+Description=Xvfb Virtual Display
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/Xvfb :99 -screen 0 1280x720x24 -ac
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target
+XVEOF
+
+# Openbox window manager (lightweight — runs on the virtual display)
+cat > /etc/systemd/system/openbox.service <<OBEOF
+[Unit]
+Description=Openbox Window Manager
+After=xvfb.service
+Requires=xvfb.service
+
+[Service]
+Type=simple
+User=${AGENT_USER}
+Environment=DISPLAY=:99
+ExecStart=/usr/bin/openbox
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target
+OBEOF
+
+# x11vnc — captures the virtual display and serves VNC
+cat > /etc/systemd/system/x11vnc.service <<VNEOF
+[Unit]
+Description=x11vnc VNC Server
+After=xvfb.service openbox.service
+Requires=xvfb.service
+
+[Service]
+Type=simple
+User=${AGENT_USER}
+Environment=DISPLAY=:99
+ExecStart=/usr/bin/x11vnc -display :99 -rfbauth /home/${AGENT_USER}/.vnc/passwd -forever -shared -noxdamage -rfbport 5900 -localhost
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target
+VNEOF
+
+# noVNC — web frontend for VNC (connects to x11vnc on port 5900)
+cat > /etc/systemd/system/novnc.service <<NVEOF
+[Unit]
+Description=noVNC Web Client
+After=x11vnc.service
+Requires=x11vnc.service
+
+[Service]
+Type=simple
+User=${AGENT_USER}
+ExecStart=/opt/noVNC/utils/novnc_proxy --listen 6080 --vnc localhost:5900
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target
+NVEOF
+
+systemctl daemon-reload
+systemctl enable xvfb openbox x11vnc novnc
+systemctl start xvfb
+sleep 2
+systemctl start openbox x11vnc novnc
+
+echo "$(date): noVNC live desktop running on 127.0.0.1:6080."
+
 # ── Step 10: tmux config ──
 sudo -u "$AGENT_USER" tee /home/$AGENT_USER/.tmux.conf > /dev/null <<'TMEOF'
 set -g default-terminal "xterm-256color"
@@ -176,31 +272,79 @@ cp /home/$AGENT_USER/claude-mem/cloud-node/services/task-watcher.service /etc/sy
 if [[ -f /etc/systemd/system/task-watcher.service ]]; then
     systemctl daemon-reload
     systemctl enable task-watcher
-    # Don't start yet — Claude Code needs to be authenticated first
     echo "$(date): Task watcher installed (not started — auth Claude Code first)."
 else
     echo "$(date): Task watcher service file not found — install manually after cloning repo."
 fi
 
+# ── Step 12b: Chat relay server (interactive Claude Code from iPhone) ──
+RELAY_TOKEN=$(openssl rand -hex 32)
+
+sudo -u "$AGENT_USER" bash -c "
+    cd ~/claude-mem/cloud-node/relay
+    npm install --production 2>&1 || true
+"
+
+# Relay env file
+sudo -u "$AGENT_USER" tee /home/$AGENT_USER/.config/relay.env > /dev/null <<RLEOF
+RELAY_PORT=3000
+RELAY_AUTH_TOKEN=${RELAY_TOKEN}
+WORKSPACE_DIR=/home/${AGENT_USER}/workspace
+CLAUDE_MEM_REPO=/home/${AGENT_USER}/claude-mem
+SUPABASE_URL=https://wcdyvukzlxxkgvxomaxr.supabase.co
+SUPABASE_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6IndjZHl2dWt6bHh4a2d2eG9tYXhyIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2OTY1OTc2OCwiZXhwIjoyMDg1MjM1NzY4fQ.AnjP6QLSbjVjXOKLtL2icevxM3gV1Ab0LtGdQVuzP2U
+MAX_CONCURRENT=3
+RLEOF
+
+# Relay systemd service
+cat > /etc/systemd/system/cloud-node-relay.service <<RSEOF
+[Unit]
+Description=Browning Cloud Node — Chat Relay
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=${AGENT_USER}
+WorkingDirectory=/home/${AGENT_USER}/claude-mem/cloud-node/relay
+ExecStart=/usr/bin/node server.js
+Restart=always
+RestartSec=5
+EnvironmentFile=/home/${AGENT_USER}/.config/relay.env
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=cloud-node-relay
+
+[Install]
+WantedBy=multi-user.target
+RSEOF
+
+systemctl daemon-reload
+systemctl enable cloud-node-relay
+# Don't start yet — Claude Code auth needed first
+echo "$(date): Chat relay installed. Token: ${RELAY_TOKEN}"
+
 # ── Step 13: Write status beacon ──
-# Writes a status file that you can check from Cloudflare Worker
 sudo -u "$AGENT_USER" tee /home/$AGENT_USER/node-status.json > /dev/null <<NSEOF
 {
     "status": "bootstrapped",
     "timestamp": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+    "relay_token": "${RELAY_TOKEN}",
     "services": {
         "code_server": "running (127.0.0.1:8080)",
         "ttyd": "running (127.0.0.1:7681)",
+        "chat_relay": "installed (127.0.0.1:3000)",
+        "novnc": "running (127.0.0.1:6080)",
         "cloudflared": "running (tunnel active)",
         "claude_code": "installed (auth required)",
         "task_watcher": "installed (start after claude auth)",
         "playwright": "installed"
     },
     "next_steps": [
-        "1. Open code.yourdomain.com in Safari",
-        "2. Open terminal in code-server",
-        "3. Run: claude (to authenticate)",
-        "4. Run: sudo systemctl start task-watcher"
+        "1. Open code.yourdomain.com in Safari — authenticate Claude Code in terminal",
+        "2. Run: sudo systemctl start cloud-node-relay task-watcher",
+        "3. Open chat.yourdomain.com — log in with relay token above",
+        "4. Open screen.yourdomain.com — see live VPS desktop"
     ]
 }
 NSEOF
@@ -210,7 +354,10 @@ echo "============================================"
 echo "  BROWNING CLOUD NODE — BOOTSTRAP COMPLETE"
 echo "============================================"
 echo ""
-echo "  Open your Cloudflare domain in Safari to access the IDE."
-echo "  Then authenticate Claude Code from the terminal tab."
+echo "  Relay token: ${RELAY_TOKEN}"
+echo "  (Also saved in ~/node-status.json)"
+echo ""
+echo "  After authenticating Claude Code, start services:"
+echo "    sudo systemctl start cloud-node-relay task-watcher"
 echo ""
 echo "$(date): Bootstrap finished."

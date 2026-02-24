@@ -1,0 +1,23 @@
+[Unit]
+Description=Browning Cloud Node — Chat Relay
+Documentation=https://github.com/Browningdigital/claude-mem/tree/main/cloud-node
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=agent
+Group=agent
+WorkingDirectory=/home/agent/claude-mem/cloud-node/relay
+ExecStart=/usr/bin/node server.js
+Restart=always
+RestartSec=5
+
+EnvironmentFile=/home/agent/.config/relay.env
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=cloud-node-relay
+
+[Install]
+WantedBy=multi-user.target
