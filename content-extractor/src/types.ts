@@ -1,0 +1,48 @@
+export type ContentType =
+  | 'youtube'
+  | 'loom'
+  | 'tiktok'
+  | 'twitter'
+  | 'threads'
+  | 'instagram'
+  | 'linkedin'
+  | 'pdf'
+  | 'image'
+  | 'audio'
+  | 'video'
+  | 'webpage';
+
+export interface ExtractionResult {
+  url: string;
+  content_type: ContentType;
+  title: string | null;
+  content: string | null;
+  metadata: Record<string, unknown>;
+  cached: boolean;
+  extracted_at: string;
+  error?: string;
+  paywalled?: boolean;
+}
+
+export interface Env {
+  AI: Ai;
+  SUPABASE_URL: string;
+  SUPABASE_KEY: string;
+  JINA_API_KEY: string;
+  DIFFBOT_TOKEN: string;
+  GROQ_API_KEY: string;
+  META_THREADS_TOKEN: string;
+}
+
+export interface CachedExtraction {
+  id: string;
+  url: string;
+  url_hash: string;
+  content_type: string;
+  title: string | null;
+  content: string | null;
+  metadata: Record<string, unknown>;
+  extracted_at: string;
+  expires_at: string;
+  error: string | null;
+}

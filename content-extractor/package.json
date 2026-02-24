@@ -1,0 +1,23 @@
+{
+  "name": "content-extractor",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "tail": "wrangler tail"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.49.1",
+    "hono": "^4.7.0",
+    "unpdf": "^0.12.0",
+    "youtube-transcript": "^1.2.1"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20250214.0",
+    "@types/node": "^25.3.0",
+    "typescript": "^5.7.0",
+    "wrangler": "^3.105.0"
+  }
+}

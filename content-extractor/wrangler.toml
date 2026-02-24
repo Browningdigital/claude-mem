@@ -1,0 +1,10 @@
+name = "content-extractor"
+main = "src/index.ts"
+compatibility_date = "2025-09-15"
+compatibility_flags = ["nodejs_compat"]
+
+[ai]
+binding = "AI"
+
+[vars]
+SUPABASE_URL = "https://wcdyvukzlxxkgvxomaxr.supabase.co"
