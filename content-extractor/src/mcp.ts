@@ -1,5 +1,6 @@
 import type { Env } from './types';
 import { extractContent } from './extract';
+import { getUploadedContent } from './upload';
 
 interface JsonRpcRequest {
   jsonrpc: string;
@@ -72,6 +73,21 @@ const TOOLS = [
         },
       },
       required: ['urls'],
+    },
+  },
+  {
+    name: 'get_upload',
+    description:
+      'Retrieve previously uploaded/extracted content by short ID. Use this when Alex pastes a content-extractor link (like .../c/ABC123) or mentions an upload ID. Returns the full analyzed content that was uploaded via the Drop Zone UI.',
+    inputSchema: {
+      type: 'object' as const,
+      properties: {
+        id: {
+          type: 'string',
+          description: 'The 8-character upload ID (from the /c/ID link)',
+        },
+      },
+      required: ['id'],
     },
   },
 ];
@@ -258,6 +274,21 @@ export async function handleMcp(request: Request, env: Env): Promise<Response> {
               return Response.json({ jsonrpc: '2.0', id, error: { code: -32602, message: 'Missing required: urls array' } });
             }
             result = await handleBatchExtract(urls, env);
+            break;
+          }
+
+          case 'get_upload': {
+            const uploadId = args?.id as string;
+            if (!uploadId) {
+              return Response.json({ jsonrpc: '2.0', id, error: { code: -32602, message: 'Missing required: id' } });
+            }
+            const uploadData = await getUploadedContent(uploadId, env);
+            if (!uploadData) {
+              result = { content: [{ type: 'text', text: `Upload not found: ${uploadId}. It may have expired (90 day retention).` }], isError: true };
+            } else {
+              const text = `# ${uploadData.title}\n\n**Type:** ${uploadData.content_type}\n**Upload ID:** ${uploadId}\n**Created:** ${uploadData.created_at}\n\n---\n\n${uploadData.content}`;
+              result = { content: [{ type: 'text', text }] };
+            }
             break;
           }
 
