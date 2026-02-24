@@ -1,0 +1,30 @@
+[Unit]
+Description=Browning Cloud Node — Task Watcher
+Documentation=https://github.com/Browningdigital/claude-mem/tree/main/cloud-node
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=agent
+Group=agent
+WorkingDirectory=/home/agent
+ExecStart=/home/agent/claude-mem/cloud-node/scripts/task-watcher.sh
+Restart=always
+RestartSec=10
+
+# Environment
+EnvironmentFile=/home/agent/.config/task-watcher.env
+
+# Security hardening
+NoNewPrivileges=false
+ProtectSystem=false
+ProtectHome=false
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=task-watcher
+
+[Install]
+WantedBy=multi-user.target
