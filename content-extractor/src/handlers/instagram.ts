@@ -8,13 +8,34 @@ interface HandlerResult {
   error?: string;
 }
 
+const BROWSER_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
+
 export async function extractInstagram(url: string, env: Env): Promise<HandlerResult> {
-  // Primary: Fetch HTML and parse og: meta tags
-  // Instagram pages include og:description (caption) and og:image (thumbnail) even without login
+  // Primary: Jina Reader (best for JS-rendered pages)
+  try {
+    const headers: Record<string, string> = { 'X-Return-Format': 'markdown' };
+    if (env.JINA_API_KEY) headers['Authorization'] = `Bearer ${env.JINA_API_KEY}`;
+    const res = await fetch(`https://r.jina.ai/${url}`, { headers });
+    if (res.ok) {
+      const text = await res.text();
+      // Filter out login pages and CAPTCHA warnings
+      if (text && text.length > 100 && !text.includes('requiring CAPTCHA') && !text.includes('Log in to Instagram')) {
+        return {
+          title: 'Instagram Post',
+          content: text,
+          metadata: { extractor: 'jina' },
+        };
+      }
+    }
+  } catch {
+    // Fall through to HTML scrape
+  }
+
+  // Fallback: Fetch HTML and parse og: meta tags
   try {
     const res = await fetch(url, {
       headers: {
-        'User-Agent': 'Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)',
+        'User-Agent': BROWSER_UA,
         Accept: 'text/html',
       },
       redirect: 'follow',
@@ -30,24 +51,20 @@ export async function extractInstagram(url: string, env: Env): Promise<HandlerRe
 
       let content = ogDesc || '';
 
-      // If there's an og:image, try to describe it with CF AI Vision (free tier)
+      // If there's an og:image, try to describe it with CF AI Vision
       if (ogImage && env.AI) {
         try {
-          const imgRes = await fetch(ogImage);
+          const imgRes = await fetch(ogImage, { headers: { 'User-Agent': BROWSER_UA } });
           if (imgRes.ok) {
             const imgBytes = await imgRes.arrayBuffer();
             const sizeMB = imgBytes.byteLength / (1024 * 1024);
             if (sizeMB <= 5) {
-              const base64 = Buffer.from(imgBytes).toString('base64');
-              const contentType = imgRes.headers.get('content-type') || 'image/jpeg';
-              const dataUrl = `data:${contentType};base64,${base64}`;
-
               const aiResult = (await env.AI.run('@cf/meta/llama-3.2-11b-vision-instruct', {
                 messages: [
                   {
                     role: 'user',
                     content: [
-                      { type: 'image', image: dataUrl },
+                      { type: 'image_url', image_url: { url: ogImage } },
                       { type: 'text', text: 'Describe this Instagram post image in detail. Transcribe any visible text.' },
                     ],
                   },
@@ -76,25 +93,6 @@ export async function extractInstagram(url: string, env: Env): Promise<HandlerRe
       }
     }
   } catch {
-    // Fall through to Jina
-  }
-
-  // Fallback: Jina Reader (free)
-  try {
-    const headers: Record<string, string> = { 'X-Return-Format': 'markdown' };
-    if (env.JINA_API_KEY) headers['Authorization'] = `Bearer ${env.JINA_API_KEY}`;
-    const res = await fetch(`https://r.jina.ai/${url}`, { headers });
-    if (res.ok) {
-      const text = await res.text();
-      if (text && text.length > 50) {
-        return {
-          title: 'Instagram Post',
-          content: text,
-          metadata: { extractor: 'jina' },
-        };
-      }
-    }
-  } catch {
     // Fall through
   }
 
@@ -102,6 +100,6 @@ export async function extractInstagram(url: string, env: Env): Promise<HandlerRe
     title: null,
     content: null,
     metadata: {},
-    error: 'Instagram extraction limited — full captions require login. og:description and image description extracted where available.',
+    error: 'Instagram extraction limited — full captions require login. This is a known v1 limitation.',
   };
 }
