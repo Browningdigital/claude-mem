@@ -13,7 +13,7 @@ const TOOLS = [
   {
     name: 'extract_content',
     description:
-      'Extract text content from any URL — articles, PDFs, YouTube transcripts, Twitter/X posts, Threads, Instagram, LinkedIn, Loom, TikTok, images (AI vision), audio/video (Whisper transcription). Returns clean Markdown regardless of source.',
+      'Extract text content from any URL — articles, PDFs, YouTube transcripts, Twitter/X posts, Threads, Reddit (posts + comments), Instagram, LinkedIn, Loom, TikTok, images (AI vision), audio/video (Whisper transcription). Defeats paywalls automatically. Returns clean Markdown regardless of source.',
     inputSchema: {
       type: 'object' as const,
       properties: {

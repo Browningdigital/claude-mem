@@ -6,6 +6,7 @@ export type ContentType =
   | 'threads'
   | 'instagram'
   | 'linkedin'
+  | 'reddit'
   | 'pdf'
   | 'image'
   | 'audio'

@@ -16,7 +16,7 @@ app.use('*', cors());
 
 // Health check
 app.get('/api/status', (c) => {
-  return c.json({ status: 'ok', service: 'content-extractor', version: '2.1.0' });
+  return c.json({ status: 'ok', service: 'content-extractor', version: '3.0.0' });
 });
 
 // REST API — extract from URL
@@ -118,24 +118,55 @@ app.get('/c/:id', async (c) => {
     return c.json(data);
   }
 
-  // For Claude sessions: return clean markdown as text
+  // For Claude sessions: return structured markdown as text
   if (accept.includes('text/plain') || c.req.query('format') === 'text') {
-    return c.text(`# ${data.title}\n\n**Type:** ${data.content_type}\n**Upload ID:** ${id}\n\n---\n\n${data.content}`);
+    const meta = data.metadata || {};
+    const headerParts = [`# ${data.title}`, '', `**Type:** ${data.content_type}`];
+    if (meta.source_url) headerParts.push(`**Source:** ${meta.source_url}`);
+    if (meta.author) headerParts.push(`**Author:** ${meta.author}`);
+    if (meta.handle) headerParts.push(`**Handle:** @${meta.handle}`);
+    if (meta.subreddit) headerParts.push(`**Subreddit:** r/${meta.subreddit}`);
+    if (meta.score != null) headerParts.push(`**Score:** ${meta.score}`);
+    if (meta.num_comments != null) headerParts.push(`**Comments:** ${meta.num_comments}`);
+    if (meta.likes != null) headerParts.push(`**Likes:** ${meta.likes}`);
+    if (meta.retweets != null) headerParts.push(`**Retweets:** ${meta.retweets}`);
+    if (meta.date || meta.created) headerParts.push(`**Date:** ${meta.date || meta.created}`);
+    headerParts.push(`**Upload ID:** ${id}`);
+    headerParts.push('', '---', '');
+    return c.text(headerParts.join('\n') + data.content);
   }
 
-  // For browsers: return a simple HTML view with copy button
+  // For browsers: return structured HTML view with metadata
+  const meta = data.metadata || {};
+  const sourceUrl = (meta.source_url || '') as string;
+  const metaParts = [escapeHtml(data.content_type)];
+  if (meta.author) metaParts.push(`by ${escapeHtml(String(meta.author))}`);
+  if (meta.handle) metaParts.push(`@${escapeHtml(String(meta.handle))}`);
+  if (meta.subreddit) metaParts.push(`r/${escapeHtml(String(meta.subreddit))}`);
+  metaParts.push(`${data.content.length.toLocaleString()} chars`);
+  if (meta.extractor) metaParts.push(`via ${escapeHtml(String(meta.extractor))}`);
+  metaParts.push(`ID: ${id}`);
+
   return c.html(`<!DOCTYPE html><html><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>${escapeHtml(data.title)}</title>
 <style>body{font-family:system-ui;max-width:720px;margin:40px auto;padding:0 20px;background:#0d1117;color:#c9d1d9}
-h1{color:#58a6ff;font-size:1.3rem;margin-bottom:8px}
-.meta{color:#8b949e;font-size:.85rem;margin-bottom:16px}
-pre{background:#161b22;padding:16px;border-radius:8px;overflow-x:auto;white-space:pre-wrap;word-break:break-word;font-size:.85rem;line-height:1.5}
+h1{color:#58a6ff;font-size:1.3rem;margin-bottom:4px}
+.source{color:#7ee787;font-size:.8rem;margin-bottom:8px;word-break:break-all}
+.source a{color:#7ee787;text-decoration:none}
+.source a:hover{text-decoration:underline}
+.meta{color:#8b949e;font-size:.8rem;margin-bottom:16px;display:flex;flex-wrap:wrap;gap:4px 12px}
+.meta span{white-space:nowrap}
+.stats{color:#8b949e;font-size:.8rem;margin-bottom:16px;display:flex;gap:16px;flex-wrap:wrap}
+.stats span{white-space:nowrap}
+pre{background:#161b22;padding:16px;border-radius:8px;overflow-x:auto;white-space:pre-wrap;word-break:break-word;font-size:.85rem;line-height:1.6}
 .copy-btn{position:fixed;bottom:20px;right:20px;padding:12px 20px;background:#58a6ff;color:#fff;border:none;border-radius:8px;font-size:.9rem;font-weight:600;cursor:pointer;z-index:10}
 .copy-btn:active{background:#4c9aed}</style></head>
 <body>
 <h1>${escapeHtml(data.title)}</h1>
-<div class="meta">${escapeHtml(data.content_type)} &middot; ${data.content.length.toLocaleString()} chars &middot; ID: ${id}</div>
+${sourceUrl ? `<div class="source"><a href="${escapeHtml(sourceUrl)}" target="_blank">${escapeHtml(sourceUrl)}</a></div>` : ''}
+<div class="meta">${metaParts.map((p) => `<span>${p}</span>`).join('')}</div>
+${renderStats(meta)}
 <pre>${escapeHtml(data.content)}</pre>
 <button class="copy-btn" onclick="navigator.clipboard.writeText(document.querySelector('pre').textContent);this.textContent='Copied!';setTimeout(()=>this.textContent='Copy All',2000)">Copy All</button>
 </body></html>`);
@@ -167,4 +198,20 @@ export default app;
 
 function escapeHtml(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+/** Render engagement stats (likes, retweets, score, etc.) if present in metadata */
+function renderStats(meta: Record<string, unknown>): string {
+  const parts: string[] = [];
+  if (meta.score != null) parts.push(`${meta.score} pts`);
+  if (meta.upvote_ratio != null) parts.push(`${Math.round(Number(meta.upvote_ratio) * 100)}% upvoted`);
+  if (meta.likes != null) parts.push(`${meta.likes} likes`);
+  if (meta.retweets != null) parts.push(`${meta.retweets} retweets`);
+  if (meta.replies != null) parts.push(`${meta.replies} replies`);
+  if (meta.num_comments != null) parts.push(`${meta.num_comments} comments`);
+  if (meta.mediaCount != null && Number(meta.mediaCount) > 0) parts.push(`${meta.mediaCount} media`);
+  if (meta.date) parts.push(String(meta.date));
+  if (meta.created) parts.push(new Date(String(meta.created)).toLocaleDateString());
+  if (parts.length === 0) return '';
+  return `<div class="stats">${parts.map((p) => `<span>${escapeHtml(p)}</span>`).join('')}</div>`;
 }

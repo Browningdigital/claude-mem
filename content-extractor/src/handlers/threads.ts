@@ -8,21 +8,81 @@ interface HandlerResult {
   error?: string;
 }
 
+/** Strip Threads page chrome: navigation, login prompts, footers, empty links */
+function cleanThreadsContent(raw: string): string {
+  return raw
+    // Remove empty markdown links (navigation icons)
+    .replace(/\[]\([^)]*\)\s*/g, '')
+    // Remove image links with CDN URLs (profile pics, thumbnails)
+    .replace(/\[!\[Image[^\]]*\]\([^)]*\)\]\([^)]*\)\s*/g, '')
+    .replace(/!\[Image[^\]]*\]\([^)]*\)\s*/g, '')
+    // Remove login/signup prompts
+    .replace(/Log in or sign up for Threads[^\n]*/gi, '')
+    .replace(/See what people are talking about[^\n]*/gi, '')
+    .replace(/\[Log in[^\]]*\]\([^)]*\)\s*/gi, '')
+    .replace(/\[Sign up[^\]]*\]\([^)]*\)\s*/gi, '')
+    // Remove footer: terms, privacy, cookies
+    .replace(/\*\s+©[^\n]*/g, '')
+    .replace(/\*\s+\[Threads Terms\][^\n]*/g, '')
+    .replace(/\*\s+\[Privacy Policy\][^\n]*/g, '')
+    .replace(/\*\s+\[Cookies Policy\][^\n]*/g, '')
+    .replace(/\*\s+Report a problem[^\n]*/g, '')
+    // Remove "Thread === X views" navigation artifacts
+    .replace(/\[Thread\s*={2,}[^\]]*\]\([^)]*\)\s*/g, '')
+    // Remove standalone navigation links to threads.com base
+    .replace(/\[]\(https:\/\/www\.threads\.com\/?\)\s*/g, '')
+    .replace(/\[]\(https:\/\/www\.threads\.com\/search\)\s*/g, '')
+    // Remove lines that are just separator bars
+    .replace(/^={3,}\s*$/gm, '')
+    // Remove lines that are just numbers (engagement counts without labels)
+    .replace(/^\d{1,3}\s*$/gm, '')
+    // Collapse excessive blank lines
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
+/** Parse author handle from Threads URL */
+function parseThreadsUrl(url: string): { author: string | null } {
+  try {
+    const match = new URL(url).pathname.match(/@([^/]+)/);
+    return { author: match ? match[1] : null };
+  } catch {
+    return { author: null };
+  }
+}
+
+/** Parse engagement numbers from raw Threads page text */
+function parseEngagement(text: string): Record<string, number | null> {
+  // Threads shows: replies reposts quotes likes (as bare numbers in sequence)
+  // Look for a pattern of 3-5 numbers on the same or adjacent lines near the post
+  const numbers = text.match(/\b(\d{1,3}(?:,\d{3})*(?:\.\d+)?[KkMm]?)\b/g);
+  // This is fragile — only use if we can confidently identify the pattern
+  return { replies: null, reposts: null, quotes: null, likes: null };
+}
+
 export async function extractThreads(url: string, env: Env): Promise<HandlerResult> {
-  // Primary: Jina Reader (most reliable for JS-rendered social content)
+  const { author } = parseThreadsUrl(url);
+
+  // Primary: Jina Reader with content cleaning
   try {
     const headers: Record<string, string> = { 'X-Return-Format': 'markdown' };
     if (env.JINA_API_KEY) headers['Authorization'] = `Bearer ${env.JINA_API_KEY}`;
     const res = await fetch(`https://r.jina.ai/${url}`, { headers });
     if (res.ok) {
-      const text = await res.text();
-      // Jina sometimes returns login pages — check for actual content
-      if (text && text.length > 50 && !text.includes('Log in') && !text.includes('Join Threads')) {
-        return {
-          title: 'Threads Post',
-          content: text,
-          metadata: { extractor: 'jina' },
-        };
+      const rawText = await res.text();
+      if (rawText && rawText.length > 50) {
+        const cleaned = cleanThreadsContent(rawText);
+        // After cleaning, check if we have real content (not just login page remnants)
+        if (cleaned.length > 30 && !cleaned.toLowerCase().includes('log in') && !cleaned.toLowerCase().includes('join threads')) {
+          return {
+            title: author ? `@${author} on Threads` : null,
+            content: cleaned,
+            metadata: {
+              extractor: 'jina-cleaned',
+              author: author || undefined,
+            },
+          };
+        }
       }
     }
   } catch {
@@ -45,17 +105,26 @@ export async function extractThreads(url: string, env: Env): Promise<HandlerResu
 
       const ogDesc = document.querySelector('meta[property="og:description"]')?.getAttribute('content');
       const ogTitle = document.querySelector('meta[property="og:title"]')?.getAttribute('content');
+      const ogImage = document.querySelector('meta[property="og:image"]')?.getAttribute('content');
 
       // Filter out login page descriptions
       if (ogDesc && ogDesc.length > 20 && !ogDesc.startsWith('Join Threads') && !ogDesc.startsWith('Log in')) {
+        const metadata: Record<string, unknown> = {
+          extractor: 'threads-og-meta',
+          author: author || undefined,
+        };
+        if (ogImage) metadata.image = ogImage;
+
         return {
-          title: ogTitle || 'Threads Post',
+          title: ogTitle && !ogTitle.toLowerCase().includes('log in')
+            ? ogTitle
+            : (author ? `@${author} on Threads` : null),
           content: ogDesc,
-          metadata: { extractor: 'threads-og-meta' },
+          metadata,
         };
       }
 
-      // Try __NEXT_DATA__ or other script blocks
+      // Try __NEXT_DATA__ or other script blocks for full post text
       const scripts = document.querySelectorAll('script');
       for (const script of scripts) {
         const text = script.textContent || '';
@@ -65,9 +134,12 @@ export async function extractThreads(url: string, env: Env): Promise<HandlerResu
             const postText = findNestedText(json);
             if (postText) {
               return {
-                title: ogTitle || 'Threads Post',
+                title: ogTitle || (author ? `@${author} on Threads` : null),
                 content: postText,
-                metadata: { extractor: 'threads-script-json' },
+                metadata: {
+                  extractor: 'threads-script-json',
+                  author: author || undefined,
+                },
               };
             }
           } catch {

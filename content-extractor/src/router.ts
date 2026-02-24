@@ -16,6 +16,7 @@ export function detectContentType(url: string): ContentType {
   if (hostMatches(host, 'threads.net')) return 'threads';
   if (hostMatches(host, 'instagram.com')) return 'instagram';
   if (hostMatches(host, 'linkedin.com')) return 'linkedin';
+  if (hostMatches(host, 'reddit.com') || hostMatches(host, 'redd.it')) return 'reddit';
   if (path.match(/\.pdf$/i)) return 'pdf';
   if (path.match(/\.(png|jpg|jpeg|gif|webp|svg|bmp)$/i)) return 'image';
   if (path.match(/\.(mp3|wav|ogg|m4a|flac|aac)$/i)) return 'audio';

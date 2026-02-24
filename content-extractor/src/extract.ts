@@ -12,6 +12,7 @@ import { extractTiktok } from './handlers/tiktok';
 import { extractInstagram } from './handlers/instagram';
 import { extractLinkedin } from './handlers/linkedin';
 import { extractLoom } from './handlers/loom';
+import { extractReddit } from './handlers/reddit';
 
 type Handler = (url: string, env: Env) => Promise<{ title: string | null; content: string | null; metadata: Record<string, unknown>; error?: string; paywalled?: boolean }>;
 
@@ -27,6 +28,7 @@ const handlers: Record<ContentType, Handler> = {
   tiktok: extractTiktok,
   instagram: extractInstagram,
   linkedin: extractLinkedin,
+  reddit: extractReddit,
   loom: extractLoom,
 };
 
@@ -36,6 +38,9 @@ const JUNK_TITLES = [
   'linkedin content', 'threads post', 'tiktok video',
   'image content', 'image description', 'instagram post',
   'extracted content', 'threads • log in',
+  'reddit - dive into anything', 'just a moment', // Cloudflare challenge
+  '403 forbidden', '404 not found', 'access denied',
+  'page not found', 'verify you are human',
 ];
 
 function isJunkTitle(title: string | null): boolean {
@@ -63,7 +68,7 @@ function titleFromContent(content: string | null, contentType: ContentType, url:
   }
 
   // 2. For tweets/social: first line or first ~80 chars as title
-  if (['twitter', 'threads', 'instagram', 'tiktok'].includes(contentType)) {
+  if (['twitter', 'threads', 'instagram', 'tiktok', 'reddit'].includes(contentType)) {
     const firstLine = content.split('\n').find((l) => l.trim().length > 10);
     if (firstLine) {
       const clean = firstLine.replace(/^[#*>\-\s]+/, '').trim();
@@ -115,6 +120,13 @@ function titleFromUrl(url: string, contentType: ContentType): string {
       case 'tiktok': {
         const match = u.pathname.match(/@([^/]+)/);
         return match ? `@${match[1]} on TikTok` : 'TikTok video';
+      }
+      case 'reddit': {
+        const subMatch = u.pathname.match(/\/r\/([^/]+)/);
+        if (subMatch) return `r/${subMatch[1]} — Reddit`;
+        const userMatch = u.pathname.match(/\/u(?:ser)?\/([^/]+)/);
+        if (userMatch) return `u/${userMatch[1]} — Reddit`;
+        return 'Reddit post';
       }
       case 'linkedin': {
         const match = u.pathname.match(/\/company\/([^/]+)/);
@@ -171,6 +183,49 @@ async function titleFromAI(content: string, env: Env): Promise<string | null> {
   return null;
 }
 
+/**
+ * Universal content post-processor.
+ * Strips common noise patterns that leak through any handler:
+ * login prompts, cookie banners, navigation chrome, tracking artifacts.
+ */
+function cleanContent(raw: string | null, contentType: ContentType): string | null {
+  if (!raw) return null;
+
+  let cleaned = raw
+    // Common login/signup prompts (all platforms)
+    .replace(/Sign (?:in|up) (?:to |with |for )[\w\s]+(?:to continue|to see more|for free)?\.?/gi, '')
+    .replace(/(?:Log|Sign) in (?:or )?(?:sign|create|register)[\w\s]*\.?/gi, '')
+    .replace(/Create (?:a )?(?:free )?account[\w\s]*\.?/gi, '')
+    .replace(/Already have an account\?[\w\s]*/gi, '')
+    // Cookie consent banners
+    .replace(/(?:We|This (?:site|website)) (?:use|uses) cookies[\s\S]{0,200}(?:Accept|Reject|Manage|OK|Got it)[.\s]*/gi, '')
+    .replace(/By (?:continuing|using)[\s\S]{0,150}(?:cookie|privacy) policy\.?/gi, '')
+    // Newsletter/subscription prompts
+    .replace(/Subscribe to (?:our )?newsletter[\s\S]{0,100}(?:email|subscribe)[\s.]*/gi, '')
+    .replace(/Get (?:the|our) (?:latest|daily|weekly)[\s\S]{0,100}(?:inbox|subscribe)[\s.]*/gi, '')
+    // Social sharing buttons as text
+    .replace(/(?:Share|Tweet|Pin|Email)\s+(?:Share|Tweet|Pin|Email)\s+(?:Share|Tweet|Pin|Email)/gi, '')
+    // Empty markdown links (navigation remnants)
+    .replace(/\[]\([^)]*\)\s*/g, '')
+    // Tracking parameters in remaining URLs (clean but keep the URL)
+    .replace(/(\?|&)(?:utm_\w+|ref|source|fbclid|gclid|mc_[ce]id)=[^&\s)]+/g, '')
+    // Excessive whitespace
+    .replace(/\n{4,}/g, '\n\n\n')
+    .replace(/[ \t]{3,}/g, '  ')
+    .trim();
+
+  // Platform-specific cleanup
+  if (['twitter', 'threads', 'instagram', 'tiktok', 'reddit'].includes(contentType)) {
+    // Remove "Follow" / "Like" / "Share" button text remnants
+    cleaned = cleaned
+      .replace(/^\s*(?:Follow|Like|Share|Repost|Reply|Quote)\s*$/gm, '')
+      .replace(/\n{3,}/g, '\n\n')
+      .trim();
+  }
+
+  return cleaned.length > 0 ? cleaned : null;
+}
+
 export async function extractContent(url: string, env: Env): Promise<ExtractionResult> {
   // 1. Check cache
   const cached = await getCached(env, url);
@@ -199,7 +254,10 @@ export async function extractContent(url: string, env: Env): Promise<ExtractionR
     result = { title: null, content: null, metadata: {}, error: `Handler error: ${(e as Error).message}` };
   }
 
-  // 4. Title resolution chain: handler → content parsing → AI summary → URL fallback
+  // 4. Clean content through universal post-processor
+  result.content = cleanContent(result.content, contentType);
+
+  // 5. Title resolution chain: handler → content parsing → AI summary → URL fallback
   let title = result.title;
 
   if (isJunkTitle(title) && result.content) {
@@ -221,10 +279,10 @@ export async function extractContent(url: string, env: Env): Promise<ExtractionR
     title = titleFromUrl(url, contentType);
   }
 
-  // 5. Cache result
+  // 6. Cache result
   await putCache(env, url, contentType, title, result.content, result.metadata, result.error);
 
-  // 6. Return
+  // 7. Return
   return {
     url,
     content_type: contentType,
