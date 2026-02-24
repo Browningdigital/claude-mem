@@ -13,7 +13,7 @@ export function detectContentType(url: string): ContentType {
   if (hostMatches(host, 'loom.com')) return 'loom';
   if (hostMatches(host, 'tiktok.com')) return 'tiktok';
   if (hostMatches(host, 'twitter.com') || hostMatches(host, 'x.com')) return 'twitter';
-  if (hostMatches(host, 'threads.net')) return 'threads';
+  if (hostMatches(host, 'threads.net') || hostMatches(host, 'threads.com')) return 'threads';
   if (hostMatches(host, 'instagram.com')) return 'instagram';
   if (hostMatches(host, 'linkedin.com')) return 'linkedin';
   if (hostMatches(host, 'reddit.com') || hostMatches(host, 'redd.it')) return 'reddit';
