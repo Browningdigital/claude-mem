@@ -172,6 +172,31 @@ ${renderStats(meta)}
 </body></html>`);
 });
 
+// Purge API — delete cached extractions and/or uploads by ID or URL
+app.post('/api/purge', async (c) => {
+  const body = await c.req.json<{ ids?: string[]; urls?: string[] }>();
+  const sb = getSupabase(c.env);
+  const results: Record<string, string> = {};
+
+  // Delete uploads by short ID
+  if (body.ids?.length) {
+    for (const id of body.ids) {
+      const { error } = await sb.from('uploads').delete().eq('id', id);
+      results[`upload:${id}`] = error ? `error: ${error.message}` : 'deleted';
+    }
+  }
+
+  // Delete extraction cache by URL
+  if (body.urls?.length) {
+    for (const url of body.urls) {
+      const { error } = await sb.from('extractions').delete().eq('url', url);
+      results[`cache:${url}`] = error ? `error: ${error.message}` : 'deleted';
+    }
+  }
+
+  return c.json({ purged: results });
+});
+
 // MCP endpoint
 app.all('/mcp', async (c) => {
   return handleMcp(c.req.raw, c.env);
