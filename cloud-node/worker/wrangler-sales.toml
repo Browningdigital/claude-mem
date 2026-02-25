@@ -1,0 +1,28 @@
+name = "browning-sales-engine"
+main = "sales-engine.ts"
+compatibility_date = "2025-02-01"
+
+# Deploy: wrangler deploy -c wrangler-sales.toml
+#
+# Secrets (REQUIRED before deploy):
+#   wrangler secret put SUPABASE_URL -c wrangler-sales.toml
+#   wrangler secret put SUPABASE_KEY -c wrangler-sales.toml
+#   wrangler secret put PAYPAL_CLIENT_ID -c wrangler-sales.toml
+#   wrangler secret put PAYPAL_SECRET -c wrangler-sales.toml
+#   wrangler secret put PAYPAL_MODE -c wrangler-sales.toml      # 'sandbox' or 'live'
+#   wrangler secret put COINBASE_API_KEY -c wrangler-sales.toml
+#   wrangler secret put COINBASE_WEBHOOK_SECRET -c wrangler-sales.toml
+#   wrangler secret put STORE_URL -c wrangler-sales.toml        # https://shop.browningdigital.com
+#   wrangler secret put WEBHOOK_SECRET -c wrangler-sales.toml
+#
+# PayPal setup:
+#   1. https://developer.paypal.com → Create REST API app
+#   2. Get Client ID + Secret
+#   3. Enable Pay Later in PayPal dashboard
+#   4. Set webhook URL: https://sales.devin-b58.workers.dev/webhooks/paypal
+#
+# Coinbase setup:
+#   1. https://commerce.coinbase.com → Settings → API Keys
+#   2. Create API key → set as COINBASE_API_KEY
+#   3. Set webhook URL: https://sales.devin-b58.workers.dev/webhooks/coinbase
+#   4. Copy webhook shared secret → COINBASE_WEBHOOK_SECRET
