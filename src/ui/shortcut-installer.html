@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-  <title>Save to Browning — iOS Shortcut</title>
+  <title>Save to Browning &mdash; iOS Shortcut</title>
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <style>
@@ -104,6 +104,7 @@
       color: rgba(255,255,255,0.5);
       line-height: 1.5;
     }
+    .step-content p strong { color: rgba(255,255,255,0.8); }
     .url-box {
       background: rgba(255,255,255,0.04);
       border: 1px solid rgba(255,255,255,0.1);
@@ -126,6 +127,41 @@
       display: block;
     }
     .url-box.copied .copy-hint { color: #4ade80; }
+    .tab-bar {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 24px;
+    }
+    .tab {
+      flex: 1;
+      padding: 12px 16px;
+      border-radius: 10px;
+      border: 1px solid rgba(255,255,255,0.1);
+      background: rgba(255,255,255,0.03);
+      color: rgba(255,255,255,0.5);
+      font-size: 14px;
+      font-weight: 600;
+      text-align: center;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .tab.active {
+      background: rgba(99, 102, 241, 0.15);
+      border-color: rgba(99, 102, 241, 0.4);
+      color: #a5b4fc;
+    }
+    .tab-content { display: none; }
+    .tab-content.active { display: block; }
+    .note-box {
+      background: rgba(99, 102, 241, 0.08);
+      border: 1px solid rgba(99, 102, 241, 0.2);
+      border-radius: 10px;
+      padding: 12px 16px;
+      margin-top: 10px;
+      font-size: 13px;
+      color: rgba(255,255,255,0.6);
+      line-height: 1.5;
+    }
     .features {
       width: 100%;
       max-width: 480px;
@@ -184,8 +220,8 @@
     <div class="badge">FREE TOOL</div>
     <h1>Save to Browning</h1>
     <p class="subtitle">
-      Send any URL from your iPhone directly to the Browning Digital content pipeline.
-      Articles, videos, tweets, PDFs &mdash; all extracted, processed, and stored automatically.
+      Send any URL, file, photo, or PDF from your iPhone directly to the Browning Digital content pipeline.
+      Everything is extracted, processed, and stored automatically.
     </p>
     <a href="#setup" class="install-btn" id="installBtn">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -198,50 +234,158 @@
   </div>
 
   <div class="setup-section" id="setup">
-    <h2>Quick Setup (1 minute)</h2>
+    <h2>Choose Your Shortcut</h2>
 
-    <div class="step">
-      <div class="step-num">1</div>
-      <div class="step-content">
-        <h3>Open the Shortcuts app</h3>
-        <p>Tap the <strong>+</strong> button to create a new shortcut.</p>
-      </div>
+    <div class="tab-bar">
+      <div class="tab active" onclick="showTab('simple')">Links Only</div>
+      <div class="tab" onclick="showTab('full')">Links + Files</div>
     </div>
 
-    <div class="step">
-      <div class="step-num">2</div>
-      <div class="step-content">
-        <h3>Name it "Save to Browning"</h3>
-        <p>Tap the name at the top. Then tap <strong>&#9432;</strong> &rarr; <strong>Show in Share Sheet</strong> and set it to receive <strong>URLs</strong>.</p>
-      </div>
-    </div>
-
-    <div class="step">
-      <div class="step-num">3</div>
-      <div class="step-content">
-        <h3>Add "Get Contents of URL"</h3>
-        <p>Search for <strong>"Get Contents of URL"</strong> and add it. Set the URL to:</p>
-        <div class="url-box" id="urlBox" onclick="copyUrl()">
-          <code id="apiUrl">https://content-extractor.devin-b58.workers.dev/api/share?url=</code>
-          <span class="copy-hint" id="copyHint">Tap to copy</span>
+    <!-- SIMPLE: Links only -->
+    <div class="tab-content active" id="tab-simple">
+      <div class="step">
+        <div class="step-num">1</div>
+        <div class="step-content">
+          <h3>Create a new shortcut</h3>
+          <p>Open the <strong>Shortcuts</strong> app. Tap <strong>+</strong> in the top right.</p>
         </div>
-        <p style="margin-top: 8px;">Then append <strong>Shortcut Input</strong> to the end of the URL (tap the URL field, insert the blue "Shortcut Input" variable after <code>=</code>).</p>
+      </div>
+
+      <div class="step">
+        <div class="step-num">2</div>
+        <div class="step-content">
+          <h3>Name it and enable sharing</h3>
+          <p>Tap the name at the top, type <strong>Save to Browning</strong>. Tap the <strong>&#8505;</strong> icon (top right), toggle on <strong>Show in Share Sheet</strong>. Under share types, keep <strong>URLs</strong> selected.</p>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="step-num">3</div>
+        <div class="step-content">
+          <h3>Add "Get Contents of URL"</h3>
+          <p>Tap <strong>Add Action</strong>. In the search bar, type <strong>Get Contents of URL</strong> and tap it.</p>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="step-num">4</div>
+        <div class="step-content">
+          <h3>Set the URL</h3>
+          <p>Tap the blue <strong>URL</strong> text inside the action. Clear it. Paste this:</p>
+          <div class="url-box" onclick="copyUrl('apiUrl1','copyHint1')">
+            <code id="apiUrl1">https://content-extractor.devin-b58.workers.dev/api/share?url=</code>
+            <span class="copy-hint" id="copyHint1">Tap to copy</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="step-num">5</div>
+        <div class="step-content">
+          <h3>Append the shared link</h3>
+          <p>Tap <strong>right after the = sign</strong> you just pasted. Look above the keyboard for a row of variables. Tap <strong>Shortcut Input</strong> (blue pill). If you don't see it, tap the <strong>{x}</strong> button above the keyboard to browse variables.</p>
+          <div class="note-box">
+            The final URL field should show the pasted text ending in <strong>=</strong> followed by a blue <strong>Shortcut Input</strong> bubble.
+          </div>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="step-num">6</div>
+        <div class="step-content">
+          <h3>Add notification</h3>
+          <p>Tap the search bar at the bottom. Type <strong>Show Notification</strong> and add it. Set the message to <strong>Saved to Browning!</strong></p>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="step-num">7</div>
+        <div class="step-content">
+          <h3>Test it</h3>
+          <p>Open Safari, tap the <strong>Share</strong> button (square with arrow), scroll down and tap <strong>Save to Browning</strong>.</p>
+        </div>
       </div>
     </div>
 
-    <div class="step">
-      <div class="step-num">4</div>
-      <div class="step-content">
-        <h3>Add a notification</h3>
-        <p>Add <strong>"Show Notification"</strong> and set it to: <code>Saved to Browning!</code></p>
+    <!-- FULL: Links + Files -->
+    <div class="tab-content" id="tab-full">
+      <div class="note-box" style="margin-bottom: 24px;">
+        This version handles <strong>links AND files</strong> (photos, PDFs, videos). It uses an If/Otherwise block so links go to the extractor and files get uploaded directly.
       </div>
-    </div>
 
-    <div class="step">
-      <div class="step-num">5</div>
-      <div class="step-content">
-        <h3>Done! Test it</h3>
-        <p>Open Safari, tap <strong>Share</strong>, select <strong>"Save to Browning"</strong>. The page content is extracted and stored in your pipeline instantly.</p>
+      <div class="step">
+        <div class="step-num">1</div>
+        <div class="step-content">
+          <h3>Create a new shortcut</h3>
+          <p>Open the <strong>Shortcuts</strong> app. Tap <strong>+</strong> in the top right.</p>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="step-num">2</div>
+        <div class="step-content">
+          <h3>Name it and enable sharing</h3>
+          <p>Tap the name at the top, type <strong>Save to Browning</strong>. Tap the <strong>&#8505;</strong> icon, toggle on <strong>Show in Share Sheet</strong>. Under share types, select <strong>anything</strong> (URLs, Images, Files, etc.).</p>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="step-num">3</div>
+        <div class="step-content">
+          <h3>Add an If action</h3>
+          <p>Tap <strong>Add Action</strong>, search for <strong>If</strong> and add it. Set it to: <strong>If</strong> Shortcut Input <strong>has any value</strong>. Then tap the <strong>If</strong> condition and change it to:</p>
+          <div class="note-box">If &rarr; <strong>Shortcut Input</strong> &rarr; <strong>is URL</strong></div>
+          <p style="margin-top: 8px;">This checks whether the shared item is a link or a file.</p>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="step-num">4</div>
+        <div class="step-content">
+          <h3>Inside If (for links)</h3>
+          <p>Under the <strong>If</strong> block, add <strong>Get Contents of URL</strong>. Tap the blue URL text, clear it, and paste:</p>
+          <div class="url-box" onclick="copyUrl('apiUrl2','copyHint2')">
+            <code id="apiUrl2">https://content-extractor.devin-b58.workers.dev/api/share?url=</code>
+            <span class="copy-hint" id="copyHint2">Tap to copy</span>
+          </div>
+          <p style="margin-top: 8px;">Then tap after the <strong>=</strong> and insert the <strong>Shortcut Input</strong> variable (blue pill from the variables bar above the keyboard).</p>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="step-num">5</div>
+        <div class="step-content">
+          <h3>Inside Otherwise (for files)</h3>
+          <p>Tap inside the <strong>Otherwise</strong> block. Add <strong>Get Contents of URL</strong> again. This time set it up as a <strong>POST</strong> request:</p>
+          <div class="note-box">
+            <strong>URL:</strong> Tap and paste the upload URL below.<br>
+            <strong>Method:</strong> Tap "GET" and change to <strong>POST</strong>.<br>
+            <strong>Request Body:</strong> Tap and change to <strong>Form</strong>.<br>
+            <strong>Add field:</strong> Tap "Add new field" &rarr; choose <strong>File</strong>.<br>
+            <strong>Key:</strong> Type <strong>file</strong><br>
+            <strong>Value:</strong> Tap and select <strong>Shortcut Input</strong>.
+          </div>
+          <div class="url-box" onclick="copyUrl('apiUrl3','copyHint3')" style="margin-top: 10px;">
+            <code id="apiUrl3">https://content-extractor.devin-b58.workers.dev/api/upload</code>
+            <span class="copy-hint" id="copyHint3">Tap to copy</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="step-num">6</div>
+        <div class="step-content">
+          <h3>Add notification (after End If)</h3>
+          <p>Below the <strong>End If</strong>, add <strong>Show Notification</strong> and set the message to <strong>Saved to Browning!</strong></p>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="step-num">7</div>
+        <div class="step-content">
+          <h3>Test it</h3>
+          <p>Test with a <strong>link</strong>: share a Safari page. Test with a <strong>file</strong>: share a photo from your camera roll or a PDF from Files.</p>
+        </div>
       </div>
     </div>
   </div>
@@ -253,7 +397,7 @@
     <div class="feature-grid">
       <div class="feature">
         <div class="feature-icon">&#128196;</div>
-        <h3>Articles & Blogs</h3>
+        <h3>Articles &amp; Blogs</h3>
         <p>Full text extraction via Jina reader</p>
       </div>
       <div class="feature">
@@ -268,22 +412,22 @@
       </div>
       <div class="feature">
         <div class="feature-icon">&#128247;</div>
-        <h3>Instagram</h3>
-        <p>Caption and media metadata</p>
-      </div>
-      <div class="feature">
-        <div class="feature-icon">&#127916;</div>
-        <h3>TikTok</h3>
-        <p>Description and metadata</p>
+        <h3>Photos &amp; Images</h3>
+        <p>OCR text extraction via Cloudflare AI</p>
       </div>
       <div class="feature">
         <div class="feature-icon">&#128220;</div>
-        <h3>PDFs</h3>
-        <p>Full text via Cloudflare AI</p>
+        <h3>PDFs &amp; Documents</h3>
+        <p>Full text extraction and indexing</p>
+      </div>
+      <div class="feature">
+        <div class="feature-icon">&#127916;</div>
+        <h3>TikTok &amp; Reels</h3>
+        <p>Description and metadata capture</p>
       </div>
       <div class="feature">
         <div class="feature-icon">&#128172;</div>
-        <h3>Reddit & LinkedIn</h3>
+        <h3>Reddit &amp; LinkedIn</h3>
         <p>Post and comment extraction</p>
       </div>
       <div class="feature">
@@ -303,11 +447,18 @@
   </div>
 
   <script>
-    function copyUrl() {
-      const url = document.getElementById('apiUrl').textContent;
+    function showTab(name) {
+      document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+      document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+      event.target.classList.add('active');
+      document.getElementById('tab-' + name).classList.add('active');
+    }
+
+    function copyUrl(codeId, hintId) {
+      const url = document.getElementById(codeId).textContent;
       navigator.clipboard.writeText(url).then(() => {
-        const box = document.getElementById('urlBox');
-        const hint = document.getElementById('copyHint');
+        const hint = document.getElementById(hintId);
+        const box = hint.closest('.url-box');
         box.classList.add('copied');
         hint.textContent = 'Copied!';
         setTimeout(() => {
