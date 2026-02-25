@@ -16,6 +16,10 @@ RestartSec=10
 # Environment
 EnvironmentFile=/home/agent/.config/task-watcher.env
 
+# Resource limits — prevent runaway Claude processes from consuming the VM
+MemoryMax=4G
+CPUQuota=200%
+
 # Security hardening — agent needs home dir access for workspace
 # but restrict everything else
 NoNewPrivileges=true

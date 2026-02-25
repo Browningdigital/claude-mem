@@ -43,7 +43,7 @@ echo "$(date): Browning Cloud Node bootstrap starting..."
 apt-get update
 DEBIAN_FRONTEND=noninteractive apt-get upgrade -y
 DEBIAN_FRONTEND=noninteractive apt-get install -y \
-    build-essential curl wget git tmux mosh htop jq unzip \
+    build-essential curl wget git tmux mosh htop jq unzip python3 \
     ufw fail2ban ca-certificates gnupg lsb-release \
     xvfb fonts-liberation libasound2 libatk-bridge2.0-0 \
     libatk1.0-0 libcups2 libdbus-1-3 libdrm2 libgbm1 \
@@ -327,28 +327,8 @@ RLEOF
 chmod 600 /home/$AGENT_USER/.config/relay.env
 chown $AGENT_USER:$AGENT_USER /home/$AGENT_USER/.config/relay.env
 
-# Relay systemd service
-cat > /etc/systemd/system/cloud-node-relay.service <<RSEOF
-[Unit]
-Description=Browning Cloud Node — Chat Relay
-After=network-online.target
-Wants=network-online.target
-
-[Service]
-Type=simple
-User=${AGENT_USER}
-WorkingDirectory=/home/${AGENT_USER}/claude-mem/cloud-node/relay
-ExecStart=/usr/bin/node server.js
-Restart=always
-RestartSec=5
-EnvironmentFile=/home/${AGENT_USER}/.config/relay.env
-StandardOutput=journal
-StandardError=journal
-SyslogIdentifier=cloud-node-relay
-
-[Install]
-WantedBy=multi-user.target
-RSEOF
+# Relay systemd service — copy from repo (single source of truth)
+cp /home/${AGENT_USER}/claude-mem/cloud-node/services/cloud-node-relay.service /etc/systemd/system/cloud-node-relay.service
 
 systemctl daemon-reload
 systemctl enable cloud-node-relay
