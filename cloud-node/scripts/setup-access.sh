@@ -25,10 +25,17 @@ if [[ -z "$DOMAIN" ]]; then
 fi
 
 if [[ -z "$CF_AUTH_KEY" ]]; then
-    read -rsp "Enter Cloudflare Global API Key (or press enter to read from env): " CF_AUTH_KEY
-    echo ""
+    # Try environment or task-watcher env file
+    if [[ -f /etc/browning/task-watcher.env ]]; then
+        source /etc/browning/task-watcher.env 2>/dev/null || true
+    fi
     if [[ -z "$CF_AUTH_KEY" ]]; then
-        CF_AUTH_KEY="bcc4bcf2149625f31c91de97188244bb4ce58"
+        read -rsp "Enter Cloudflare Global API Key: " CF_AUTH_KEY
+        echo ""
+        if [[ -z "$CF_AUTH_KEY" ]]; then
+            echo "FATAL: Cloudflare API key is required."
+            exit 1
+        fi
     fi
 fi
 

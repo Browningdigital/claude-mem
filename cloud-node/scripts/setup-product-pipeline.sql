@@ -117,13 +117,46 @@ CREATE TABLE IF NOT EXISTS revenue_daily (
 
 -- ── Indexes ──
 CREATE INDEX IF NOT EXISTS idx_products_status ON products(status);
+CREATE INDEX IF NOT EXISTS idx_products_status_price ON products(status, price);
 CREATE INDEX IF NOT EXISTS idx_products_pillar ON products(pillar);
 CREATE INDEX IF NOT EXISTS idx_product_sales_created ON product_sales(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_product_sales_product ON product_sales(product_id);
+CREATE INDEX IF NOT EXISTS idx_product_sales_payment ON product_sales(payment_id);
 CREATE INDEX IF NOT EXISTS idx_content_queue_status ON content_queue(status, scheduled_for);
 CREATE INDEX IF NOT EXISTS idx_content_queue_platform ON content_queue(platform, status);
 CREATE INDEX IF NOT EXISTS idx_scheduled_tasks_next ON scheduled_tasks(next_run) WHERE enabled = true;
 CREATE INDEX IF NOT EXISTS idx_pipeline_stage ON product_pipeline(stage);
+
+-- ── Row Level Security ──
+-- Enable RLS on all product pipeline tables
+ALTER TABLE products ENABLE ROW LEVEL SECURITY;
+ALTER TABLE product_sales ENABLE ROW LEVEL SECURITY;
+ALTER TABLE product_pipeline ENABLE ROW LEVEL SECURITY;
+ALTER TABLE content_queue ENABLE ROW LEVEL SECURITY;
+ALTER TABLE scheduled_tasks ENABLE ROW LEVEL SECURITY;
+ALTER TABLE revenue_daily ENABLE ROW LEVEL SECURITY;
+
+-- service_role bypasses RLS; anon gets read-only on products
+CREATE POLICY "anon can read deployed products" ON products
+    FOR SELECT USING (status = 'deployed');
+
+CREATE POLICY "service_role full access products" ON products
+    FOR ALL USING (auth.role() = 'service_role');
+
+CREATE POLICY "service_role full access product_sales" ON product_sales
+    FOR ALL USING (auth.role() = 'service_role');
+
+CREATE POLICY "service_role full access product_pipeline" ON product_pipeline
+    FOR ALL USING (auth.role() = 'service_role');
+
+CREATE POLICY "service_role full access content_queue" ON content_queue
+    FOR ALL USING (auth.role() = 'service_role');
+
+CREATE POLICY "service_role full access scheduled_tasks" ON scheduled_tasks
+    FOR ALL USING (auth.role() = 'service_role');
+
+CREATE POLICY "service_role full access revenue_daily" ON revenue_daily
+    FOR ALL USING (auth.role() = 'service_role');
 
 -- ── Update golden_nuggets for pipeline tracking ──
 ALTER TABLE golden_nuggets ADD COLUMN IF NOT EXISTS pipeline_stage TEXT DEFAULT 'backlog';

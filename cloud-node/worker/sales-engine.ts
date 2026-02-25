@@ -245,17 +245,15 @@ async function createPayPalOrder(env: Env, product: Product, body: CheckoutReque
       paypal: {
         experience_context: {
           payment_method_preference: 'IMMEDIATE_PAYMENT_REQUIRED',
+          shipping_preference: 'NO_SHIPPING',
           brand_name: 'Browning Digital',
           locale: 'en-US',
           landing_page: 'LOGIN',
           user_action: 'PAY_NOW',
           return_url: `${env.STORE_URL}/success`,
-          cancel_url: `${env.STORE_URL}/checkout/${product.slug}`,
+          cancel_url: `${env.STORE_URL}`,
         },
       },
-    },
-    application_context: {
-      shipping_preference: 'NO_SHIPPING',
     },
   };
 
@@ -290,7 +288,7 @@ async function createPayPalOrder(env: Env, product: Product, body: CheckoutReque
 }
 
 async function handlePayPalCapture(env: Env, orderId: string): Promise<Response> {
-  if (!orderId || !/^[A-Z0-9]+$/.test(orderId)) {
+  if (!orderId || !/^[A-Za-z0-9-]+$/.test(orderId)) {
     return json({ error: 'Invalid order_id' }, 400, env);
   }
 
@@ -302,6 +300,7 @@ async function handlePayPalCapture(env: Env, orderId: string): Promise<Response>
     headers: {
       'Authorization': `Bearer ${token}`,
       'Content-Type': 'application/json',
+      'PayPal-Request-Id': `capture-${orderId}`,
     },
   });
 
@@ -344,7 +343,7 @@ async function handlePayPalCapture(env: Env, orderId: string): Promise<Response>
     await supabaseInsert(env, 'product_sales', saleRecord);
 
     // Generate delivery token
-    const deliveryToken = generateDeliveryToken(saleRecord.payment_id);
+    const deliveryToken = await generateDeliveryToken(saleRecord.payment_id);
 
     return json({
       success: true,
@@ -371,58 +370,88 @@ async function createPayPalInstallmentPlan(env: Env, product: Product, body: Che
   const installments = Math.min(Math.max(body.installment_count || 3, 2), 4);
   const installmentAmount = (product.price / installments).toFixed(2);
 
-  // Step 1: Create a billing plan
-  const planData = {
-    product_id: product.id, // PayPal catalog product (create separately if needed)
-    name: `${product.name} — ${installments}-Payment Plan`,
-    description: `Pay ${installmentAmount} ${product.currency || 'USD'} x ${installments} installments`,
-    billing_cycles: [{
-      frequency: {
-        interval_unit: 'MONTH',
-        interval_count: 1,
-      },
-      tenure_type: 'REGULAR',
-      sequence: 1,
-      total_cycles: installments,
-      pricing_scheme: {
-        fixed_price: {
-          value: installmentAmount,
-          currency_code: product.currency || 'USD',
-        },
-      },
-    }],
-    payment_preferences: {
-      auto_bill_outstanding: true,
-      setup_fee: {
-        value: '0',
-        currency_code: product.currency || 'USD',
-      },
-      setup_fee_failure_action: 'CANCEL',
-      payment_failure_threshold: 2,
-    },
-  };
+  // Check for cached plan ID in product metadata
+  const planCacheKey = `paypal_plan_${installments}x`;
+  const cachedPlanId = product.metadata?.[planCacheKey];
 
-  // First, ensure we have a PayPal catalog product
-  const catalogProduct = await ensurePayPalCatalogProduct(env, token, product);
+  let plan: any;
 
-  planData.product_id = catalogProduct.id;
-
-  const planRes = await fetch(`${base}/v1/billing/plans`, {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${token}`,
-      'Content-Type': 'application/json',
-      'Prefer': 'return=representation',
-    },
-    body: JSON.stringify(planData),
-  });
-
-  if (!planRes.ok) {
-    const err = await planRes.text();
-    throw new Error(`PayPal plan creation failed: ${err.substring(0, 300)}`);
+  if (cachedPlanId) {
+    // Verify the cached plan is still active
+    const verifyRes = await fetch(`${base}/v1/billing/plans/${cachedPlanId}`, {
+      headers: { 'Authorization': `Bearer ${token}` },
+    });
+    if (verifyRes.ok) {
+      const existing = await verifyRes.json() as any;
+      if (existing.status === 'ACTIVE') {
+        plan = existing;
+      }
+    }
   }
 
-  const plan: any = await planRes.json();
+  if (!plan) {
+    // Create new billing plan (first time or if cached one expired)
+    const catalogProduct = await ensurePayPalCatalogProduct(env, token, product);
+
+    const planData = {
+      product_id: catalogProduct.id,
+      name: `${product.name} — ${installments}-Payment Plan`,
+      description: `Pay ${installmentAmount} ${product.currency || 'USD'} x ${installments} installments`,
+      billing_cycles: [{
+        frequency: {
+          interval_unit: 'MONTH',
+          interval_count: 1,
+        },
+        tenure_type: 'REGULAR',
+        sequence: 1,
+        total_cycles: installments,
+        pricing_scheme: {
+          fixed_price: {
+            value: installmentAmount,
+            currency_code: product.currency || 'USD',
+          },
+        },
+      }],
+      payment_preferences: {
+        auto_bill_outstanding: true,
+        setup_fee: {
+          value: '0',
+          currency_code: product.currency || 'USD',
+        },
+        setup_fee_failure_action: 'CANCEL',
+        payment_failure_threshold: 2,
+      },
+    };
+
+    const planRes = await fetch(`${base}/v1/billing/plans`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json',
+        'Prefer': 'return=representation',
+      },
+      body: JSON.stringify(planData),
+    });
+
+    if (!planRes.ok) {
+      const err = await planRes.text();
+      throw new Error(`PayPal plan creation failed: ${err.substring(0, 300)}`);
+    }
+
+    plan = await planRes.json();
+
+    // Cache the plan ID in product metadata for reuse
+    const updatedMeta = { ...(product.metadata || {}), [planCacheKey]: plan.id };
+    await fetch(`${env.SUPABASE_URL}/rest/v1/products?id=eq.${product.id}`, {
+      method: 'PATCH',
+      headers: {
+        'apikey': env.SUPABASE_KEY,
+        'Authorization': `Bearer ${env.SUPABASE_KEY}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ metadata: updatedMeta }),
+    });
+  }
 
   // Step 2: Create subscription
   const subscriptionData = {
@@ -554,6 +583,47 @@ async function createCoinbaseCharge(env: Env, product: Product, body: CheckoutRe
 
 async function handlePayPalWebhook(request: Request, env: Env): Promise<Response> {
   const body = await request.text();
+
+  // Verify webhook signature via PayPal API
+  if (env.WEBHOOK_SECRET) {
+    const transmissionId = request.headers.get('PAYPAL-TRANSMISSION-ID');
+    const transmissionTime = request.headers.get('PAYPAL-TRANSMISSION-TIME');
+    const certUrl = request.headers.get('PAYPAL-CERT-URL');
+    const transmissionSig = request.headers.get('PAYPAL-TRANSMISSION-SIG');
+    const authAlgo = request.headers.get('PAYPAL-AUTH-ALGO');
+
+    if (!transmissionId || !transmissionSig) {
+      return json({ error: 'Missing PayPal signature headers' }, 401);
+    }
+
+    // Verify via PayPal's verification endpoint
+    const token = await getPayPalAccessToken(env);
+    const verifyRes = await fetch(`${paypalBaseUrl(env)}/v1/notifications/verify-webhook-signature`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        auth_algo: authAlgo,
+        cert_url: certUrl,
+        transmission_id: transmissionId,
+        transmission_sig: transmissionSig,
+        transmission_time: transmissionTime,
+        webhook_id: env.WEBHOOK_SECRET,
+        webhook_event: JSON.parse(body),
+      }),
+    });
+
+    if (verifyRes.ok) {
+      const verifyData = await verifyRes.json() as any;
+      if (verifyData.verification_status !== 'SUCCESS') {
+        console.error('PayPal webhook verification failed:', verifyData);
+        return json({ error: 'Webhook verification failed' }, 401);
+      }
+    }
+  }
+
   let event: any;
   try {
     event = JSON.parse(body);
@@ -563,18 +633,30 @@ async function handlePayPalWebhook(request: Request, env: Env): Promise<Response
 
   const eventType = event.event_type;
 
+  // Prevent duplicate processing
+  const existingCheck = await supabaseGet(env, 'product_sales',
+    `metadata->>paypal_event_id=eq.${event.id}&limit=1`);
+  if (existingCheck.length > 0) {
+    return json({ received: true, duplicate: true });
+  }
+
   // Handle payment captures
   if (eventType === 'PAYMENT.CAPTURE.COMPLETED') {
     const capture = event.resource;
     const amount = parseFloat(capture?.amount?.value || '0');
 
     if (amount > 0) {
+      // Try to extract customer info from the parent order
+      const customerEmail = capture?.supplementary_data?.related_ids?.order_id
+        ? '' : (capture?.payer?.email_address || '');
+
       await supabaseInsert(env, 'product_sales', {
         product_name: capture?.custom_id || 'PayPal Purchase',
         amount,
         currency: capture?.amount?.currency_code || 'USD',
         source: 'paypal',
-        customer_email: '',
+        customer_email: customerEmail,
+        customer_name: '',
         payment_id: capture?.id || event.id,
         metadata: { webhook_event: eventType, paypal_event_id: event.id },
       });
@@ -592,9 +674,11 @@ async function handlePayPalWebhook(request: Request, env: Env): Promise<Response
         amount,
         currency: sale?.amount?.currency || 'USD',
         source: 'paypal_subscription',
+        customer_name: '',
         payment_id: sale?.id || event.id,
         metadata: {
           webhook_event: eventType,
+          paypal_event_id: event.id,
           subscription_id: sale?.billing_agreement_id,
         },
       });
@@ -672,7 +756,7 @@ async function handleDelivery(env: Env, saleId: string, token: string): Promise<
   }
 
   // Verify token
-  const expectedToken = generateDeliveryToken(saleId);
+  const expectedToken = await generateDeliveryToken(saleId);
   if (token !== expectedToken) {
     return json({ error: 'Invalid delivery token' }, 403, env);
   }
@@ -702,16 +786,19 @@ async function handleDelivery(env: Env, saleId: string, token: string): Promise<
   }, 200, env);
 }
 
-function generateDeliveryToken(saleId: string): string {
-  // Simple HMAC-like token — in production, use crypto.subtle
-  let hash = 0;
-  const str = `browning-delivery-${saleId}-2026`;
-  for (let i = 0; i < str.length; i++) {
-    const char = str.charCodeAt(i);
-    hash = ((hash << 5) - hash) + char;
-    hash |= 0;
-  }
-  return Math.abs(hash).toString(36);
+async function generateDeliveryToken(saleId: string): Promise<string> {
+  const encoder = new TextEncoder();
+  const key = await crypto.subtle.importKey(
+    'raw',
+    encoder.encode('browning-delivery-2026'),
+    { name: 'HMAC', hash: 'SHA-256' },
+    false,
+    ['sign'],
+  );
+  const sig = await crypto.subtle.sign('HMAC', key, encoder.encode(saleId));
+  return Array.from(new Uint8Array(sig).slice(0, 16))
+    .map(b => b.toString(16).padStart(2, '0'))
+    .join('');
 }
 
 // ══════════════════════════════════════

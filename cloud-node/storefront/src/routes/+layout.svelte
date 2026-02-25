@@ -23,8 +23,8 @@
 
   :global(body) {
     font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
-    background: #0a0a0f;
-    color: #e8e8f0;
+    background: #fff;
+    color: #1a1a2e;
     line-height: 1.6;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
@@ -32,7 +32,7 @@
   }
 
   :global(::selection) {
-    background: rgba(0, 212, 255, 0.3);
-    color: #fff;
+    background: rgba(255, 144, 232, 0.25);
+    color: #1a1a2e;
   }
 </style>

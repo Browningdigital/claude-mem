@@ -20,8 +20,18 @@ exec > /var/log/cloud-init-browning.log 2>&1
 # ──────────────────────────────────────────────
 # FILL THESE IN BEFORE PASTING INTO ORACLE
 # ──────────────────────────────────────────────
-TUNNEL_TOKEN="eyJhIjoiYjU4ZGRmMzhhZWViYjc3YzBlYzRjODI5ZWE0MmFkZjUiLCJ0IjoiNjgwMGMyZTctZjI2Yi00MDgxLThmNWUtYTk5NGI4YWMzMWE2IiwicyI6IkFnQXNnNDVEUmlUbTVJeWM5L3o2dDdqYnN5VEsrcndVa2l2dXhKYVRCZ3M9In0="
-CODE_SERVER_PASSWORD="BrwN-Cl0ud-2026!"   # Set by provisioner
+TUNNEL_TOKEN="${TUNNEL_TOKEN:-REPLACE_ME_WITH_TUNNEL_TOKEN}"
+CODE_SERVER_PASSWORD="${CODE_SERVER_PASSWORD:-REPLACE_ME_WITH_PASSWORD}"
+
+# Validate credentials are set
+if [[ "$TUNNEL_TOKEN" == "REPLACE_ME_WITH_TUNNEL_TOKEN" ]]; then
+    echo "FATAL: TUNNEL_TOKEN not set. Replace the placeholder before pasting into Oracle."
+    exit 1
+fi
+if [[ "$CODE_SERVER_PASSWORD" == "REPLACE_ME_WITH_PASSWORD" ]]; then
+    echo "FATAL: CODE_SERVER_PASSWORD not set. Replace the placeholder before pasting into Oracle."
+    exit 1
+fi
 # ──────────────────────────────────────────────
 
 AGENT_USER="agent"
@@ -288,6 +298,8 @@ cp /home/$AGENT_USER/claude-mem/cloud-node/services/scheduled-dispatcher.service
 cp /home/$AGENT_USER/claude-mem/cloud-node/services/scheduled-dispatcher.timer /etc/systemd/system/ 2>/dev/null || true
 chmod +x /home/$AGENT_USER/claude-mem/cloud-node/scripts/scheduled-dispatcher.sh 2>/dev/null || true
 chmod +x /home/$AGENT_USER/claude-mem/cloud-node/scripts/content-ingest-poll.sh 2>/dev/null || true
+chmod +x /home/$AGENT_USER/claude-mem/cloud-node/scripts/task-watcher.sh 2>/dev/null || true
+chmod +x /home/$AGENT_USER/claude-mem/cloud-node/scripts/bootstrap.sh 2>/dev/null || true
 if [[ -f /etc/systemd/system/scheduled-dispatcher.timer ]]; then
     systemctl daemon-reload
     systemctl enable scheduled-dispatcher.timer

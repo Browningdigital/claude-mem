@@ -285,13 +285,14 @@ wss.on('connection', (ws, req) => {
         // Build Claude command
         const args = ['-p', '--output-format', 'stream-json'];
 
-        // Check if this session has previous messages (use --continue)
-        const msgFile = join(conversationDir, 'messages.jsonl');
-        const messageCount = existsSync(msgFile)
-          ? readFileSync(msgFile, 'utf8').trim().split('\n').length
-          : 0;
-        if (messageCount > 1) {
-          args.push('--continue');
+        // Use --resume with the session ID for multi-turn conversation
+        // The relay's sessionId is stored in meta.json and passed to Claude CLI
+        const claudeSessionFile = join(conversationDir, '.claude_session_id');
+        if (existsSync(claudeSessionFile)) {
+          const claudeSessionId = readFileSync(claudeSessionFile, 'utf8').trim();
+          if (claudeSessionId) {
+            args.push('--resume', claudeSessionId);
+          }
         }
 
         send({ type: 'assistant.thinking', message: 'Claude is working...' });
@@ -365,6 +366,21 @@ wss.on('connection', (ws, req) => {
           if (currentAssistantMessage.trim()) {
             appendMessage(conversationDir, 'assistant', currentAssistantMessage);
           }
+
+          // Extract and save Claude's session ID for --resume on next message
+          // Claude CLI outputs session info; also check the output for session_id
+          try {
+            const outputLines = fullOutput.split('\n');
+            for (const line of outputLines) {
+              try {
+                const parsed = JSON.parse(line);
+                if (parsed.session_id) {
+                  writeFileSync(join(conversationDir, '.claude_session_id'), parsed.session_id);
+                  break;
+                }
+              } catch {}
+            }
+          } catch {}
 
           send({
             type: 'assistant.done',

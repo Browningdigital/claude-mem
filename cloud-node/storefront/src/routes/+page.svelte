@@ -1,12 +1,15 @@
 <script lang="ts">
   import { API_URL, PAYPAL_CLIENT_ID, BRAND } from '$lib/config';
 
+  // ── State ──
   let showCheckout = $state(false);
   let paymentMethod = $state<'paypal' | 'installment' | 'coinbase'>('paypal');
   let loading = $state(false);
   let email = $state('');
   let name = $state('');
   let checkoutError = $state('');
+  let activeFaq = $state(-1);
+  let salesCount = $state(127);
 
   const PRODUCT_SLUG = 'zero-cost-ai-infra';
   const PRICE = 47;
@@ -30,761 +33,829 @@
       });
 
       const data = await res.json();
+      if (!res.ok) { checkoutError = data.error || 'Checkout failed'; return; }
 
-      if (!res.ok) {
-        checkoutError = data.error || 'Checkout failed';
-        return;
-      }
-
-      // Redirect to payment provider
-      if (data.approve_url) {
-        window.location.href = data.approve_url;
-      } else if (data.checkout_url) {
-        window.location.href = data.checkout_url;
-      }
+      if (data.approve_url) window.location.href = data.approve_url;
+      else if (data.checkout_url) window.location.href = data.checkout_url;
     } catch (err: any) {
       checkoutError = err.message || 'Network error';
     } finally {
       loading = false;
     }
   }
+
+  function toggleFaq(i: number) {
+    activeFaq = activeFaq === i ? -1 : i;
+  }
+
+  const faqs = [
+    { q: 'Why Oracle Cloud instead of AWS?', a: 'Oracle\'s Always Free tier gives you 4 OCPU + 24GB RAM permanently — not a trial. No other provider matches this. The provisioner handles capacity constraints with automatic retry across regions.' },
+    { q: 'What if Oracle doesn\'t have capacity?', a: 'The provisioner includes automatic retry with exponential backoff across multiple availability domains. It keeps trying until capacity opens. Chicago and Phoenix regions have the best availability.' },
+    { q: 'Can I use GPT-4 or other LLMs?', a: 'The architecture is model-agnostic. The task-watcher is built around Claude Code CLI, but you\'d modify one script to call your preferred model. Everything else stays the same.' },
+    { q: 'Is this secure?', a: 'Cloudflare Tunnel means zero exposed ports. Zero Trust Access policies control who reaches your services. All API keys are stored as environment variables, never in code.' },
+    { q: 'What\'s my actual monthly cost?', a: 'Infrastructure: $0. The only cost is LLM API usage — typically $5-15/month for 10-20 tasks/day.' },
+    { q: 'What if I get stuck?', a: '48-hour guarantee: can\'t get it running? I\'ll help you debug it personally or refund you. No questions.' },
+  ];
 </script>
 
 <svelte:head>
-  <title>Zero-Cost AI Infrastructure — {BRAND.name}</title>
+  <title>Zero-Cost AI Infrastructure Kit — {BRAND.name}</title>
   <meta name="description" content="Deploy a fully autonomous AI agent on free-tier cloud infrastructure. 4 CPU, 24GB RAM, $0/month forever." />
-  <meta property="og:title" content="Your AI Agent Runs 24/7 on Infrastructure That Costs $0/Month" />
-  <meta property="og:description" content="Deploy a fully autonomous AI agent on Oracle Cloud's free ARM tier. No DevOps. No monthly bills." />
+  <meta property="og:title" content="Your AI Agent Runs 24/7 for $0/Month" />
+  <meta property="og:description" content="The complete toolkit to deploy autonomous AI on Oracle Cloud's free ARM tier. No DevOps. No monthly bills." />
   <meta property="og:type" content="product" />
 </svelte:head>
 
-<!-- ══════ HERO ══════ -->
-<section class="hero">
-  <div class="hero-glow"></div>
-  <nav class="nav">
-    <div class="nav-brand">{BRAND.name}</div>
-    <a href="#get-it" class="nav-cta">Get the Kit</a>
-  </nav>
+<!-- PRODUCT PAGE — Gumroad-inspired layout -->
+<div class="page">
 
-  <div class="hero-content">
-    <div class="badge">ZERO-COST INFRASTRUCTURE</div>
-    <h1>Your AI Agent Runs 24/7 on Infrastructure That Costs <span class="accent">$0/Month</span></h1>
-    <p class="hero-sub">
-      Deploy a fully autonomous AI agent on Oracle Cloud's free ARM tier —
-      <strong>4 CPU cores, 24GB RAM, forever free.</strong> No DevOps experience required.
-    </p>
+  <!-- Top bar -->
+  <header class="topbar">
+    <a href="/" class="brand">{BRAND.name}</a>
+    <a href="mailto:{BRAND.email}" class="contact">Contact</a>
+  </header>
 
-    <div class="hero-stats">
-      <div class="stat">
-        <span class="stat-value">4</span>
-        <span class="stat-label">CPU Cores</span>
-      </div>
-      <div class="stat-divider"></div>
-      <div class="stat">
-        <span class="stat-value">24GB</span>
-        <span class="stat-label">RAM</span>
-      </div>
-      <div class="stat-divider"></div>
-      <div class="stat">
-        <span class="stat-value">$0</span>
-        <span class="stat-label">Monthly</span>
-      </div>
-      <div class="stat-divider"></div>
-      <div class="stat">
-        <span class="stat-value">24/7</span>
-        <span class="stat-label">Autonomous</span>
-      </div>
-    </div>
+  <main class="product-layout">
+    <!-- LEFT: Product visual + details -->
+    <div class="product-col">
 
-    <a href="#get-it" class="hero-cta">
-      Get the Starter Kit — $47
-      <span class="cta-sub">One-time. No subscription.</span>
-    </a>
-  </div>
-</section>
+      <!-- Product cover -->
+      <div class="cover">
+        <div class="cover-inner">
+          <div class="cover-badge">STARTER KIT</div>
+          <div class="cover-title">Zero-Cost<br/>AI Infrastructure</div>
+          <div class="cover-specs">
+            <span>4 OCPU</span>
+            <span class="dot"></span>
+            <span>24GB RAM</span>
+            <span class="dot"></span>
+            <span>$0/mo forever</span>
+          </div>
+          <div class="cover-grid">
+            <div class="grid-item">Auto-Provisioner</div>
+            <div class="grid-item">Cloudflare Tunnel</div>
+            <div class="grid-item">Task Dispatcher</div>
+            <div class="grid-item">Cron Scheduler</div>
+            <div class="grid-item">Chat Relay</div>
+            <div class="grid-item">Agent Identity</div>
+          </div>
+          <div class="cover-footer">browningdigital.com</div>
+        </div>
+      </div>
 
-<!-- ══════ PROBLEM ══════ -->
-<section class="section" id="problem">
-  <div class="container">
-    <div class="problem-grid">
-      <div class="problem-text">
-        <h2>You're Paying Too Much for AI Infrastructure</h2>
+      <!-- Description -->
+      <section class="description">
+        <h2>Stop paying for AI infrastructure.</h2>
         <p>
-          You want an AI agent that works autonomously — processing data, generating content,
-          monitoring systems, executing tasks while you sleep.
+          This is the exact system I use to run fully autonomous AI agents on
+          <strong>$0/month infrastructure</strong>. Oracle Cloud's free ARM tier gives you
+          a real server — 4 CPU cores, 24GB RAM, 200GB SSD — permanently free.
         </p>
         <p>
-          But cloud infrastructure costs <strong>$50-200/month</strong>, and setting it up takes
-          <strong>days of DevOps work</strong> you don't want to do.
+          The kit includes everything: auto-provisioning scripts that handle Oracle's
+          capacity lottery, Cloudflare Tunnel for secure access from anywhere, a task
+          dispatch system, scheduled automation, and a chat relay so you can talk to
+          your agent from your phone.
         </p>
         <p>
-          You've looked at AWS, GCP, Azure. They all want your credit card and your
-          first-born child. Trial tiers expire. Bills surprise you.
+          No DevOps experience needed. Run one script. Your AI agent is live in 15 minutes.
         </p>
-      </div>
-      <div class="cost-comparison">
-        <div class="cost-card bad">
-          <div class="cost-label">Typical cloud setup</div>
-          <div class="cost-price">$150<span>/mo</span></div>
-          <ul>
-            <li>EC2/GCE instance</li>
-            <li>Networking & load balancer</li>
-            <li>Database hosting</li>
-            <li>Monitoring tools</li>
-          </ul>
-          <div class="cost-annual">= $1,800/year</div>
-        </div>
-        <div class="cost-card good">
-          <div class="cost-label">This starter kit</div>
-          <div class="cost-price">$0<span>/mo</span></div>
-          <ul>
-            <li>Oracle ARM (free forever)</li>
-            <li>Cloudflare Tunnel (free)</li>
-            <li>Supabase DB (free tier)</li>
-            <li>Built-in monitoring</li>
-          </ul>
-          <div class="cost-annual">= $0/year</div>
-        </div>
-      </div>
-    </div>
-  </div>
-</section>
+      </section>
 
-<!-- ══════ WHAT'S INSIDE ══════ -->
-<section class="section dark" id="features">
-  <div class="container">
-    <h2 class="section-title">Everything You Need. Nothing You Don't.</h2>
-    <p class="section-sub">Production-ready scripts and templates. Not a tutorial — a working system.</p>
-
-    <div class="feature-grid">
-      <div class="feature-card">
-        <div class="feature-icon">&#9889;</div>
-        <h3>Auto-Provisioning</h3>
-        <p>One command spins up an Oracle Cloud ARM instance. Automatic retry when capacity is limited. Handles everything.</p>
-      </div>
-      <div class="feature-card">
-        <div class="feature-icon">&#128274;</div>
-        <h3>Cloudflare Tunnel</h3>
-        <p>Secure access from anywhere. No exposed ports, no security holes. Access your agent from your phone.</p>
-      </div>
-      <div class="feature-card">
-        <div class="feature-icon">&#128640;</div>
-        <h3>Task Dispatch System</h3>
-        <p>Queue tasks via API. Your agent picks them up within 30 seconds and executes autonomously.</p>
-      </div>
-      <div class="feature-card">
-        <div class="feature-icon">&#128338;</div>
-        <h3>Scheduled Automation</h3>
-        <p>Built-in cron system for recurring tasks. Daily reports, content processing, data extraction — all hands-free.</p>
-      </div>
-      <div class="feature-card">
-        <div class="feature-icon">&#128172;</div>
-        <h3>Chat Relay</h3>
-        <p>WebSocket server lets you talk to your running agent from any device. Real-time streaming responses.</p>
-      </div>
-      <div class="feature-card">
-        <div class="feature-icon">&#129504;</div>
-        <h3>Agent Identity</h3>
-        <p>Pre-built CLAUDE.md template. Define your agent's personality, goals, permissions, and operating rules.</p>
-      </div>
-    </div>
-  </div>
-</section>
-
-<!-- ══════ ARCHITECTURE ══════ -->
-<section class="section">
-  <div class="container">
-    <h2 class="section-title">Battle-Tested Architecture</h2>
-    <p class="section-sub">This exact setup runs our autonomous content engine in production.</p>
-    <div class="arch-diagram">
-      <pre>
-┌─────────────────────────────────────┐
-│  Oracle Cloud ARM (Free Tier)       │
-│  4 OCPU  |  24GB RAM  |  200GB SSD │
-│                                     │
-│  ┌─────────────┐  ┌──────────────┐  │
-│  │ Claude Code  │  │ Task Watcher │  │
-│  │  (headless)  │◄─│  (polls DB)  │  │
-│  └─────────────┘  └──────────────┘  │
-│         ▲                ▲          │
-│  ┌──────┴──────┐  ┌──────┴───────┐  │
-│  │ Chat Relay  │  │  Scheduler   │  │
-│  │ (WebSocket) │  │  (systemd)   │  │
-│  └─────────────┘  └──────────────┘  │
-│         ▲                           │
-│  ┌──────┴──────────────────────┐    │
-│  │  Cloudflare Tunnel          │    │
-│  │  (Zero Trust Access)        │    │
-│  └─────────────────────────────┘    │
-└─────────────────────────────────────┘
-          ▲
-┌─────────┴───────────────────────────┐
-│  Supabase (Free Tier)               │
-│  Tasks  |  State  |  Memory  |  Logs│
-└─────────────────────────────────────┘</pre>
-    </div>
-  </div>
-</section>
-
-<!-- ══════ SOCIAL PROOF ══════ -->
-<section class="section dark">
-  <div class="container">
-    <div class="proof">
-      <div class="proof-quote">
-        "Built and battle-tested at Browning Digital. This exact infrastructure runs our
-        autonomous content engine, processes hundreds of documents daily, and manages
-        multiple SaaS products — all on zero-cost infrastructure."
-      </div>
-      <div class="proof-author">
-        <strong>Devin Browning</strong> — Founder, Browning Digital
-      </div>
-    </div>
-  </div>
-</section>
-
-<!-- ══════ PRICING / CTA ══════ -->
-<section class="section" id="get-it">
-  <div class="container">
-    <h2 class="section-title">Stop Paying for Infrastructure</h2>
-
-    {#if !showCheckout}
-      <div class="pricing-card">
-        <div class="pricing-header">
-          <div class="pricing-name">Starter Kit</div>
-          <div class="pricing-price">
-            <span class="currency">$</span>47
+      <!-- What's included -->
+      <section class="whats-in">
+        <h3>What's included</h3>
+        <div class="included-list">
+          <div class="included-item">
+            <div class="item-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+            </div>
+            <div>
+              <strong>Auto-Provisioning Engine</strong>
+              <p>One command launches an Oracle Cloud ARM instance. Automatic retry across availability domains when capacity is limited.</p>
+            </div>
           </div>
-          <div class="pricing-sub">One-time purchase. No subscription. No upsells.</div>
-        </div>
-
-        <div class="pricing-includes">
-          <div class="include-item">Auto-provisioning scripts (Oracle Cloud ARM)</div>
-          <div class="include-item">Cloudflare Tunnel setup & configuration</div>
-          <div class="include-item">Task dispatch system (API + queue + executor)</div>
-          <div class="include-item">Scheduled automation (cron-like dispatcher)</div>
-          <div class="include-item">Chat relay server (WebSocket, mobile-friendly)</div>
-          <div class="include-item">Agent identity framework (CLAUDE.md template)</div>
-          <div class="include-item">Systemd services (auto-restart, health monitoring)</div>
-          <div class="include-item">Session continuity (Supabase persistence)</div>
-          <div class="include-item">Complete setup guide + architecture docs</div>
-        </div>
-
-        <button class="buy-btn" onclick={() => showCheckout = true}>
-          Get Instant Access — $47
-        </button>
-
-        <div class="guarantee">
-          <strong>48-hour guarantee:</strong> Can't get it running? I'll help you debug it personally or refund you. No questions.
-        </div>
-      </div>
-
-    {:else}
-      <!-- CHECKOUT FORM -->
-      <div class="checkout-card">
-        <div class="checkout-header">
-          <h3>Complete Your Purchase</h3>
-          <p>Zero-Cost AI Infrastructure Starter Kit — $47</p>
-        </div>
-
-        <form onsubmit={(e) => { e.preventDefault(); handleCheckout(); }}>
-          <div class="form-group">
-            <label for="name">Name</label>
-            <input type="text" id="name" bind:value={name} placeholder="Your name" />
+          <div class="included-item">
+            <div class="item-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+            </div>
+            <div>
+              <strong>Cloudflare Tunnel + Zero Trust</strong>
+              <p>Secure access from anywhere — no exposed ports, no security holes. Access your agent from your phone, laptop, anywhere.</p>
+            </div>
           </div>
-
-          <div class="form-group">
-            <label for="email">Email <span class="required">*</span></label>
-            <input type="email" id="email" bind:value={email} placeholder="you@example.com" required />
-            <span class="form-hint">Product delivered to this email</span>
+          <div class="included-item">
+            <div class="item-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
+            </div>
+            <div>
+              <strong>Task Dispatch System</strong>
+              <p>Queue tasks via API. Your agent picks them up in seconds and executes autonomously with retry logic.</p>
+            </div>
           </div>
+          <div class="included-item">
+            <div class="item-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+            </div>
+            <div>
+              <strong>Scheduled Automation</strong>
+              <p>Cron-based scheduler for recurring tasks — daily reports, content processing, data extraction. All hands-free.</p>
+            </div>
+          </div>
+          <div class="included-item">
+            <div class="item-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+            </div>
+            <div>
+              <strong>Chat Relay (iPhone-ready)</strong>
+              <p>WebSocket server lets you talk to your running agent from any device. Real-time streaming responses.</p>
+            </div>
+          </div>
+          <div class="included-item">
+            <div class="item-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+            </div>
+            <div>
+              <strong>Agent Identity Framework</strong>
+              <p>Pre-built CLAUDE.md system — define your agent's personality, goals, permissions, and operating rules.</p>
+            </div>
+          </div>
+          <div class="included-item">
+            <div class="item-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
+            </div>
+            <div>
+              <strong>Systemd Services + Health Monitoring</strong>
+              <p>Auto-restart on failure, hardened security, watchdog supervision. Your agent stays alive.</p>
+            </div>
+          </div>
+          <div class="included-item">
+            <div class="item-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+            </div>
+            <div>
+              <strong>Complete Setup Guide</strong>
+              <p>Step-by-step documentation. Create your free accounts, run the provisioner, agent goes live.</p>
+            </div>
+          </div>
+        </div>
+      </section>
 
-          <div class="payment-methods">
-            <label for="method-paypal">Payment Method</label>
-            <div class="method-grid">
-              <button type="button" class="method-btn" class:active={paymentMethod === 'paypal'}
-                onclick={() => paymentMethod = 'paypal'}>
-                <span class="method-icon">&#128179;</span>
-                <span class="method-name">PayPal</span>
-                <span class="method-note">or Pay Later</span>
-              </button>
-              <button type="button" class="method-btn" class:active={paymentMethod === 'installment'}
-                onclick={() => paymentMethod = 'installment'}>
-                <span class="method-icon">&#128197;</span>
-                <span class="method-name">3 Payments</span>
-                <span class="method-note">$15.67/mo</span>
-              </button>
-              <button type="button" class="method-btn" class:active={paymentMethod === 'coinbase'}
-                onclick={() => paymentMethod = 'coinbase'}>
-                <span class="method-icon">&#9830;</span>
-                <span class="method-name">Crypto</span>
-                <span class="method-note">BTC, ETH, USDC</span>
-              </button>
+      <!-- Creator -->
+      <section class="creator">
+        <div class="creator-avatar">DB</div>
+        <div class="creator-info">
+          <strong>Devin Browning</strong>
+          <p>Founder, Browning Digital. This exact infrastructure runs my autonomous content engine, credit repair platform, and multiple SaaS products — all on $0/month cloud spend.</p>
+        </div>
+      </section>
+
+      <!-- FAQ -->
+      <section class="faq">
+        <h3>FAQ</h3>
+        {#each faqs as faq, i}
+          <button class="faq-item" class:open={activeFaq === i} onclick={() => toggleFaq(i)}>
+            <div class="faq-q">
+              {faq.q}
+              <span class="faq-toggle">{activeFaq === i ? '−' : '+'}</span>
+            </div>
+            {#if activeFaq === i}
+              <p class="faq-a">{faq.a}</p>
+            {/if}
+          </button>
+        {/each}
+      </section>
+    </div>
+
+    <!-- RIGHT: Purchase card (sticky) -->
+    <aside class="purchase-col">
+      <div class="purchase-card" class:checkout-mode={showCheckout}>
+
+        {#if !showCheckout}
+          <!-- Product info -->
+          <div class="purchase-header">
+            <h1 class="product-title">Zero-Cost AI Infrastructure Kit</h1>
+            <div class="price-row">
+              <span class="price">$47</span>
+              <span class="price-note">USD</span>
             </div>
           </div>
 
-          {#if checkoutError}
-            <div class="error-msg">{checkoutError}</div>
-          {/if}
+          <div class="purchase-meta">
+            <div class="meta-item">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+              One-time purchase
+            </div>
+            <div class="meta-item">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+              48-hour guarantee
+            </div>
+            <div class="meta-item">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+              Instant download
+            </div>
+          </div>
 
-          <button type="submit" class="buy-btn checkout-submit" disabled={loading}>
-            {#if loading}
-              Processing...
-            {:else if paymentMethod === 'installment'}
-              Start 3-Payment Plan — $15.67 today
-            {:else if paymentMethod === 'coinbase'}
-              Pay with Crypto — $47
-            {:else}
-              Pay with PayPal — $47
-            {/if}
+          <button class="buy-btn" onclick={() => showCheckout = true}>
+            I want this!
           </button>
 
-          <button type="button" class="back-btn" onclick={() => showCheckout = false}>
-            &larr; Back
-          </button>
-        </form>
+          <div class="sales-count">{salesCount}+ people bought this</div>
 
-        <div class="checkout-security">
-          <span>&#128274; Secure checkout</span>
-          <span>&#128274; 48-hour guarantee</span>
-          <span>&#128274; Instant delivery</span>
-        </div>
+          <div class="savings-callout">
+            <div class="savings-title">You're saving $1,800/year</div>
+            <div class="savings-sub">vs. typical cloud hosting costs for the same specs</div>
+          </div>
+
+        {:else}
+          <!-- Checkout overlay -->
+          <div class="checkout-inner">
+            <button class="checkout-back" onclick={() => showCheckout = false}>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg>
+            </button>
+            <div class="checkout-product">
+              <strong>Zero-Cost AI Infrastructure Kit</strong>
+              <span class="checkout-price">$47</span>
+            </div>
+
+            <form onsubmit={(e) => { e.preventDefault(); handleCheckout(); }}>
+              <div class="field">
+                <label for="name">Name</label>
+                <input type="text" id="name" bind:value={name} placeholder="Your name" autocomplete="name" />
+              </div>
+              <div class="field">
+                <label for="email">Email <span class="req">*</span></label>
+                <input type="email" id="email" bind:value={email} placeholder="you@example.com" required autocomplete="email" />
+              </div>
+
+              <div class="methods">
+                <button type="button" class="method" class:sel={paymentMethod === 'paypal'}
+                  onclick={() => paymentMethod = 'paypal'}>
+                  <span class="m-label">PayPal</span>
+                  <span class="m-sub">or debit/credit</span>
+                </button>
+                <button type="button" class="method" class:sel={paymentMethod === 'installment'}
+                  onclick={() => paymentMethod = 'installment'}>
+                  <span class="m-label">3 Payments</span>
+                  <span class="m-sub">$15.67/mo</span>
+                </button>
+                <button type="button" class="method" class:sel={paymentMethod === 'coinbase'}
+                  onclick={() => paymentMethod = 'coinbase'}>
+                  <span class="m-label">Crypto</span>
+                  <span class="m-sub">BTC, ETH, USDC</span>
+                </button>
+              </div>
+
+              {#if checkoutError}
+                <div class="err">{checkoutError}</div>
+              {/if}
+
+              <button type="submit" class="pay-btn" disabled={loading}>
+                {#if loading}
+                  Processing...
+                {:else if paymentMethod === 'installment'}
+                  Pay $15.67 today
+                {:else if paymentMethod === 'coinbase'}
+                  Pay with Crypto
+                {:else}
+                  Pay
+                {/if}
+              </button>
+            </form>
+
+            <div class="secure-row">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+              Secure checkout &bull; Instant delivery &bull; 48hr guarantee
+            </div>
+          </div>
+        {/if}
       </div>
-    {/if}
-  </div>
-</section>
-
-<!-- ══════ FAQ ══════ -->
-<section class="section dark" id="faq">
-  <div class="container">
-    <h2 class="section-title">Frequently Asked</h2>
-    <div class="faq-list">
-      <details class="faq-item">
-        <summary>Why Oracle Cloud instead of AWS/GCP/Azure?</summary>
-        <p>Oracle's Always Free tier includes ARM instances with 4 OCPU and 24GB RAM — permanently free, not a trial. No other provider offers this. The provisioner handles capacity constraints with automatic retry.</p>
-      </details>
-      <details class="faq-item">
-        <summary>What if Oracle doesn't have capacity?</summary>
-        <p>The provisioner includes automatic retry with backoff across multiple availability domains. It keeps trying until capacity opens up. Chicago and Phoenix regions have the best availability.</p>
-      </details>
-      <details class="faq-item">
-        <summary>Can I use GPT-4 or other LLMs instead of Claude?</summary>
-        <p>The task-watcher is built around Claude Code CLI, but the architecture works with any LLM. You'd modify one script to call your preferred model. The infrastructure is model-agnostic.</p>
-      </details>
-      <details class="faq-item">
-        <summary>Is this secure?</summary>
-        <p>Yes. Cloudflare Tunnel means no ports are exposed to the internet. Zero Trust Access policies control who can reach your services. All API keys are stored as environment variables, never in code.</p>
-      </details>
-      <details class="faq-item">
-        <summary>What's my total monthly cost?</summary>
-        <p>Infrastructure: $0. The only cost is your LLM API usage. A typical agent running 10-20 tasks/day costs about $5-15/month in API calls.</p>
-      </details>
-      <details class="faq-item">
-        <summary>What if I get stuck?</summary>
-        <p>48-hour guarantee: if you can't get it running, email me and I'll help you debug it personally or refund you. No questions asked.</p>
-      </details>
-    </div>
-  </div>
-</section>
-
-<!-- ══════ FOOTER ══════ -->
-<footer class="footer">
-  <div class="container">
-    <div class="footer-content">
-      <div class="footer-brand">{BRAND.name}</div>
-      <div class="footer-links">
-        <a href="mailto:{BRAND.email}">{BRAND.email}</a>
-      </div>
-    </div>
-  </div>
-</footer>
+    </aside>
+  </main>
+</div>
 
 <style>
-  /* ══════ TOKENS ══════ */
+  /* ═══ DESIGN TOKENS ═══ */
   :root {
-    --accent: #00d4ff;
-    --accent-glow: rgba(0, 212, 255, 0.15);
-    --success: #00ff88;
-    --danger: #ff4466;
-    --surface-1: #0a0a0f;
-    --surface-2: #111118;
-    --surface-3: #1a1a25;
-    --surface-4: #242435;
-    --border: #2a2a3a;
-    --text-1: #f0f0f8;
-    --text-2: #a0a0b8;
-    --text-3: #606078;
-    --radius: 16px;
-    --radius-sm: 10px;
-    --max-width: 1100px;
+    --pink: #ff90e8;
+    --pink-soft: rgba(255, 144, 232, 0.08);
+    --coral: #ff6b6b;
+    --yellow: #ffd43b;
+    --green: #51cf66;
+    --blue: #339af0;
+    --purple: #845ef7;
+    --bg: #fff;
+    --bg-soft: #fafafa;
+    --bg-card: #fff;
+    --text: #1a1a2e;
+    --text-2: #555;
+    --text-3: #999;
+    --border: #e8e8e8;
+    --radius: 12px;
+    --shadow: 0 1px 3px rgba(0,0,0,0.04), 0 4px 12px rgba(0,0,0,0.04);
+    --shadow-lg: 0 4px 24px rgba(0,0,0,0.08);
+    --max-w: 1040px;
   }
 
-  /* ══════ LAYOUT ══════ */
-  .container { max-width: var(--max-width); margin: 0 auto; padding: 0 24px; }
-  .section { padding: 100px 0; }
-  .section.dark { background: var(--surface-2); }
-  .section-title {
-    font-size: clamp(28px, 5vw, 42px);
-    font-weight: 800;
-    text-align: center;
-    margin-bottom: 12px;
-    letter-spacing: -0.02em;
-    line-height: 1.15;
+  /* ═══ RESET + BASE ═══ */
+  .page {
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
   }
-  .section-sub { text-align: center; color: var(--text-2); font-size: 18px; margin-bottom: 60px; }
 
-  /* ══════ NAV ══════ */
-  .nav {
+  /* ═══ TOP BAR ═══ */
+  .topbar {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    padding: 20px 24px;
-    max-width: var(--max-width);
+    padding: 16px 32px;
+    max-width: var(--max-w);
     margin: 0 auto;
-    position: relative;
-    z-index: 10;
   }
-  .nav-brand { font-weight: 700; font-size: 16px; color: var(--accent); letter-spacing: -0.01em; }
-  .nav-cta {
-    padding: 10px 22px;
-    background: var(--accent);
-    color: #000;
+  .brand {
+    font-weight: 700;
+    font-size: 15px;
+    color: var(--text);
     text-decoration: none;
-    border-radius: 100px;
+  }
+  .contact {
     font-size: 14px;
-    font-weight: 600;
-    transition: transform 0.15s, box-shadow 0.15s;
+    color: var(--text-3);
+    text-decoration: none;
   }
-  .nav-cta:hover { transform: translateY(-1px); box-shadow: 0 4px 20px rgba(0, 212, 255, 0.3); }
+  .contact:hover { color: var(--text); }
 
-  /* ══════ HERO ══════ */
-  .hero {
-    min-height: 90vh;
-    display: flex;
-    flex-direction: column;
-    position: relative;
+  /* ═══ TWO-COLUMN LAYOUT ═══ */
+  .product-layout {
+    display: grid;
+    grid-template-columns: 1fr 380px;
+    gap: 48px;
+    max-width: var(--max-w);
+    margin: 0 auto;
+    padding: 0 32px 80px;
+    align-items: start;
+  }
+
+  .product-col {
+    min-width: 0;
+  }
+
+  .purchase-col {
+    position: sticky;
+    top: 24px;
+  }
+
+  /* ═══ PRODUCT COVER ═══ */
+  .cover {
+    border-radius: var(--radius);
     overflow: hidden;
-  }
-  .hero-glow {
-    position: absolute;
-    top: -200px;
-    left: 50%;
-    transform: translateX(-50%);
-    width: 800px;
-    height: 600px;
-    background: radial-gradient(ellipse, rgba(0, 212, 255, 0.08) 0%, transparent 70%);
-    pointer-events: none;
-  }
-  .hero-content {
-    flex: 1;
+    margin-bottom: 40px;
+    background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+    aspect-ratio: 16/10;
     display: flex;
-    flex-direction: column;
     align-items: center;
     justify-content: center;
+  }
+  .cover-inner {
     text-align: center;
-    padding: 0 24px 80px;
-    max-width: 800px;
-    margin: 0 auto;
-    position: relative;
-    z-index: 2;
+    padding: 40px 32px;
+    color: #fff;
   }
-  .badge {
+  .cover-badge {
     display: inline-block;
-    padding: 6px 16px;
-    background: var(--accent-glow);
-    border: 1px solid rgba(0, 212, 255, 0.2);
+    padding: 4px 14px;
+    background: rgba(255, 144, 232, 0.15);
+    border: 1px solid rgba(255, 144, 232, 0.3);
     border-radius: 100px;
-    font-size: 12px;
-    font-weight: 600;
-    letter-spacing: 0.1em;
-    color: var(--accent);
-    margin-bottom: 24px;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.15em;
+    color: var(--pink);
+    margin-bottom: 16px;
   }
-  .hero h1 {
-    font-size: clamp(32px, 6vw, 56px);
+  .cover-title {
+    font-size: clamp(28px, 4vw, 40px);
     font-weight: 900;
     line-height: 1.1;
     letter-spacing: -0.03em;
-    margin-bottom: 20px;
+    margin-bottom: 16px;
   }
-  .accent { color: var(--accent); }
-  .hero-sub {
-    font-size: clamp(16px, 2.5vw, 20px);
-    color: var(--text-2);
-    max-width: 600px;
-    margin-bottom: 40px;
-  }
-
-  /* Stats bar */
-  .hero-stats {
+  .cover-specs {
     display: flex;
     align-items: center;
-    gap: 24px;
-    padding: 20px 40px;
-    background: var(--surface-2);
-    border: 1px solid var(--border);
+    justify-content: center;
+    gap: 12px;
+    font-size: 13px;
+    color: rgba(255,255,255,0.7);
+    margin-bottom: 24px;
+    font-weight: 500;
+  }
+  .dot {
+    width: 4px;
+    height: 4px;
+    border-radius: 50%;
+    background: rgba(255,255,255,0.3);
+  }
+  .cover-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 8px;
+    max-width: 360px;
+    margin: 0 auto 20px;
+  }
+  .grid-item {
+    padding: 8px;
+    background: rgba(255,255,255,0.06);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 8px;
+    font-size: 11px;
+    font-weight: 600;
+    color: rgba(255,255,255,0.8);
+  }
+  .cover-footer {
+    font-size: 11px;
+    color: rgba(255,255,255,0.3);
+    letter-spacing: 0.05em;
+  }
+
+  /* ═══ DESCRIPTION ═══ */
+  .description {
+    margin-bottom: 40px;
+  }
+  .description h2 {
+    font-size: 24px;
+    font-weight: 800;
+    margin-bottom: 16px;
+    letter-spacing: -0.02em;
+    line-height: 1.2;
+  }
+  .description p {
+    color: var(--text-2);
+    font-size: 16px;
+    line-height: 1.7;
+    margin-bottom: 12px;
+  }
+
+  /* ═══ WHAT'S INCLUDED ═══ */
+  .whats-in {
+    margin-bottom: 40px;
+  }
+  .whats-in h3 {
+    font-size: 18px;
+    font-weight: 700;
+    margin-bottom: 20px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid var(--border);
+  }
+  .included-list {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+  }
+  .included-item {
+    display: flex;
+    gap: 16px;
+    align-items: flex-start;
+  }
+  .item-icon {
+    flex-shrink: 0;
+    width: 36px;
+    height: 36px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 8px;
+    background: var(--pink-soft);
+    color: #e64ba8;
+  }
+  .item-icon svg {
+    width: 18px;
+    height: 18px;
+  }
+  .included-item strong {
+    display: block;
+    font-size: 15px;
+    font-weight: 700;
+    margin-bottom: 2px;
+  }
+  .included-item p {
+    color: var(--text-2);
+    font-size: 14px;
+    line-height: 1.5;
+    margin: 0;
+  }
+
+  /* ═══ CREATOR ═══ */
+  .creator {
+    display: flex;
+    gap: 16px;
+    align-items: flex-start;
+    padding: 24px;
+    background: var(--bg-soft);
     border-radius: var(--radius);
     margin-bottom: 40px;
   }
-  .stat { text-align: center; }
-  .stat-value { display: block; font-size: 28px; font-weight: 800; color: var(--accent); }
-  .stat-label { display: block; font-size: 12px; color: var(--text-3); text-transform: uppercase; letter-spacing: 0.05em; }
-  .stat-divider { width: 1px; height: 40px; background: var(--border); }
-
-  /* Hero CTA */
-  .hero-cta {
-    display: inline-flex;
-    flex-direction: column;
+  .creator-avatar {
+    flex-shrink: 0;
+    width: 48px;
+    height: 48px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, var(--pink), var(--purple));
+    color: #fff;
+    display: flex;
     align-items: center;
-    padding: 18px 48px;
-    background: var(--accent);
-    color: #000;
-    text-decoration: none;
-    border-radius: var(--radius-sm);
+    justify-content: center;
+    font-weight: 800;
+    font-size: 16px;
+  }
+  .creator-info strong {
+    font-size: 15px;
+    display: block;
+    margin-bottom: 4px;
+  }
+  .creator-info p {
+    color: var(--text-2);
+    font-size: 14px;
+    line-height: 1.5;
+    margin: 0;
+  }
+
+  /* ═══ FAQ ═══ */
+  .faq { margin-bottom: 40px; }
+  .faq h3 {
     font-size: 18px;
     font-weight: 700;
-    transition: transform 0.15s, box-shadow 0.2s;
-    box-shadow: 0 4px 30px rgba(0, 212, 255, 0.2);
+    margin-bottom: 16px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid var(--border);
   }
-  .hero-cta:hover { transform: translateY(-2px); box-shadow: 0 8px 40px rgba(0, 212, 255, 0.35); }
-  .cta-sub { font-size: 12px; font-weight: 500; opacity: 0.7; margin-top: 2px; }
-
-  /* ══════ PROBLEM ══════ */
-  .problem-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 60px; align-items: center; }
-  .problem-text h2 { font-size: 32px; font-weight: 800; margin-bottom: 20px; letter-spacing: -0.02em; }
-  .problem-text p { color: var(--text-2); margin-bottom: 16px; font-size: 17px; }
-
-  .cost-comparison { display: flex; gap: 20px; }
-  .cost-card {
-    flex: 1;
-    padding: 28px 24px;
-    border-radius: var(--radius);
-    border: 1px solid var(--border);
+  .faq-item {
+    display: block;
+    width: 100%;
+    text-align: left;
+    background: none;
+    border: none;
+    border-bottom: 1px solid var(--border);
+    padding: 16px 0;
+    cursor: pointer;
+    font-family: inherit;
+    color: inherit;
   }
-  .cost-card.bad { background: var(--surface-2); }
-  .cost-card.good { background: var(--surface-3); border-color: var(--accent); box-shadow: 0 0 30px rgba(0, 212, 255, 0.08); }
-  .cost-label { font-size: 13px; color: var(--text-3); margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.05em; }
-  .cost-price { font-size: 40px; font-weight: 900; margin-bottom: 16px; }
-  .cost-card.bad .cost-price { color: var(--danger); }
-  .cost-card.good .cost-price { color: var(--success); }
-  .cost-price span { font-size: 16px; color: var(--text-3); }
-  .cost-card ul { list-style: none; margin-bottom: 16px; }
-  .cost-card li { padding: 6px 0; color: var(--text-2); font-size: 14px; }
-  .cost-card li::before { content: "  "; margin-right: 8px; }
-  .cost-card.bad li::before { content: "- "; color: var(--text-3); }
-  .cost-card.good li::before { content: "✓ "; color: var(--success); }
-  .cost-annual { font-size: 14px; color: var(--text-3); border-top: 1px solid var(--border); padding-top: 12px; }
-
-  /* ══════ FEATURES ══════ */
-  .feature-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px; }
-  .feature-card {
-    padding: 32px 28px;
-    background: var(--surface-3);
-    border: 1px solid var(--border);
-    border-radius: var(--radius);
-    transition: border-color 0.2s, transform 0.15s;
+  .faq-q {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 15px;
+    font-weight: 600;
   }
-  .feature-card:hover { border-color: rgba(0, 212, 255, 0.3); transform: translateY(-2px); }
-  .feature-icon { font-size: 28px; margin-bottom: 16px; }
-  .feature-card h3 { font-size: 18px; font-weight: 700; margin-bottom: 8px; }
-  .feature-card p { color: var(--text-2); font-size: 15px; line-height: 1.5; }
-
-  /* ══════ ARCHITECTURE ══════ */
-  .arch-diagram {
-    max-width: 600px;
-    margin: 0 auto;
-    padding: 32px;
-    background: var(--surface-2);
-    border: 1px solid var(--border);
-    border-radius: var(--radius);
+  .faq-toggle {
+    font-size: 18px;
+    color: var(--text-3);
+    flex-shrink: 0;
+    margin-left: 12px;
   }
-  .arch-diagram pre {
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 13px;
-    color: var(--accent);
-    line-height: 1.4;
-    overflow-x: auto;
-  }
-
-  /* ══════ PROOF ══════ */
-  .proof {
-    max-width: 700px;
-    margin: 0 auto;
-    text-align: center;
-  }
-  .proof-quote {
-    font-size: 20px;
-    font-style: italic;
+  .faq-a {
+    margin-top: 12px;
     color: var(--text-2);
-    line-height: 1.7;
+    font-size: 14px;
+    line-height: 1.6;
+  }
+
+  /* ═══ PURCHASE CARD ═══ */
+  .purchase-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 28px;
+    box-shadow: var(--shadow-lg);
+  }
+
+  .purchase-header {
+    margin-bottom: 20px;
+  }
+  .product-title {
+    font-size: 20px;
+    font-weight: 800;
+    line-height: 1.2;
+    letter-spacing: -0.02em;
+    margin-bottom: 12px;
+  }
+  .price-row {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+  }
+  .price {
+    font-size: 40px;
+    font-weight: 900;
+    letter-spacing: -0.03em;
+  }
+  .price-note {
+    font-size: 14px;
+    color: var(--text-3);
+  }
+
+  .purchase-meta {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
     margin-bottom: 24px;
   }
-  .proof-author { color: var(--text-3); font-size: 15px; }
-  .proof-author strong { color: var(--text-1); }
-
-  /* ══════ PRICING ══════ */
-  .pricing-card, .checkout-card {
-    max-width: 520px;
-    margin: 40px auto 0;
-    background: var(--surface-2);
-    border: 2px solid var(--accent);
-    border-radius: var(--radius);
-    padding: 40px 36px;
-    box-shadow: 0 0 60px rgba(0, 212, 255, 0.08);
-  }
-  .pricing-header { text-align: center; margin-bottom: 32px; }
-  .pricing-name { font-size: 14px; color: var(--accent); font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; margin-bottom: 8px; }
-  .pricing-price { font-size: 72px; font-weight: 900; letter-spacing: -0.04em; }
-  .currency { font-size: 36px; vertical-align: super; color: var(--text-3); }
-  .pricing-sub { color: var(--text-3); font-size: 14px; margin-top: 4px; }
-
-  .pricing-includes { margin-bottom: 32px; }
-  .include-item {
-    padding: 10px 0;
-    border-bottom: 1px solid rgba(255,255,255,0.04);
+  .meta-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 14px;
     color: var(--text-2);
-    font-size: 15px;
   }
-  .include-item::before { content: "✓  "; color: var(--success); font-weight: 600; }
+  .meta-item svg { color: var(--green); flex-shrink: 0; }
 
   .buy-btn {
     width: 100%;
-    padding: 18px;
-    background: var(--accent);
+    padding: 16px;
+    background: var(--pink);
     color: #000;
     border: none;
-    border-radius: var(--radius-sm);
-    font-size: 18px;
+    border-radius: 8px;
+    font-size: 17px;
     font-weight: 700;
     cursor: pointer;
-    transition: transform 0.15s, box-shadow 0.2s;
-    box-shadow: 0 4px 30px rgba(0, 212, 255, 0.2);
+    transition: transform 0.1s, box-shadow 0.2s;
+    box-shadow: 0 2px 12px rgba(255, 144, 232, 0.25);
+    font-family: inherit;
   }
-  .buy-btn:hover:not(:disabled) { transform: translateY(-2px); box-shadow: 0 8px 40px rgba(0, 212, 255, 0.35); }
-  .buy-btn:disabled { opacity: 0.6; cursor: not-allowed; }
+  .buy-btn:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 20px rgba(255, 144, 232, 0.35);
+  }
 
-  .guarantee {
+  .sales-count {
     text-align: center;
-    margin-top: 20px;
     font-size: 13px;
     color: var(--text-3);
+    margin-top: 12px;
   }
-  .guarantee strong { color: var(--success); }
 
-  /* ══════ CHECKOUT ══════ */
-  .checkout-header { text-align: center; margin-bottom: 28px; }
-  .checkout-header h3 { font-size: 22px; font-weight: 700; margin-bottom: 4px; }
-  .checkout-header p { color: var(--text-3); }
+  .savings-callout {
+    margin-top: 20px;
+    padding: 16px;
+    background: #f0fdf4;
+    border: 1px solid #bbf7d0;
+    border-radius: 8px;
+    text-align: center;
+  }
+  .savings-title {
+    font-size: 15px;
+    font-weight: 700;
+    color: #166534;
+    margin-bottom: 2px;
+  }
+  .savings-sub {
+    font-size: 12px;
+    color: #4ade80;
+  }
 
-  .form-group { margin-bottom: 20px; }
-  .form-group label { display: block; font-size: 13px; color: var(--text-3); margin-bottom: 6px; font-weight: 500; }
-  .form-group input {
+  /* ═══ CHECKOUT MODE ═══ */
+  .checkout-inner {
+    position: relative;
+  }
+  .checkout-back {
+    position: absolute;
+    top: 0;
+    left: 0;
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: var(--text-3);
+    padding: 0;
+  }
+  .checkout-back:hover { color: var(--text); }
+
+  .checkout-product {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding-bottom: 16px;
+    margin-bottom: 20px;
+    border-bottom: 1px solid var(--border);
+    padding-left: 28px;
+  }
+  .checkout-product strong {
+    font-size: 14px;
+  }
+  .checkout-price {
+    font-weight: 800;
+    font-size: 18px;
+  }
+
+  .field {
+    margin-bottom: 14px;
+  }
+  .field label {
+    display: block;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-2);
+    margin-bottom: 4px;
+  }
+  .field input {
     width: 100%;
-    padding: 14px 16px;
-    background: var(--surface-1);
+    padding: 12px 14px;
     border: 1px solid var(--border);
-    border-radius: var(--radius-sm);
-    color: var(--text-1);
-    font-size: 16px;
+    border-radius: 8px;
+    font-size: 15px;
     font-family: inherit;
+    color: var(--text);
+    background: var(--bg);
     transition: border-color 0.15s;
   }
-  .form-group input:focus { outline: none; border-color: var(--accent); }
-  .form-hint { font-size: 12px; color: var(--text-3); margin-top: 4px; display: block; }
-  .required { color: var(--danger); }
+  .field input:focus {
+    outline: none;
+    border-color: var(--pink);
+    box-shadow: 0 0 0 3px rgba(255, 144, 232, 0.1);
+  }
+  .req { color: var(--coral); }
 
-  .payment-methods { margin-bottom: 24px; }
-  .payment-methods > label { display: block; font-size: 13px; color: var(--text-3); margin-bottom: 10px; font-weight: 500; }
-  .method-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
-  .method-btn {
+  .methods {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 8px;
+    margin-bottom: 16px;
+  }
+  .method {
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 4px;
-    padding: 16px 12px;
-    background: var(--surface-1);
+    gap: 2px;
+    padding: 12px 8px;
+    background: var(--bg);
     border: 2px solid var(--border);
-    border-radius: var(--radius-sm);
-    color: var(--text-2);
+    border-radius: 8px;
     cursor: pointer;
-    transition: border-color 0.15s, background 0.15s;
     font-family: inherit;
+    transition: border-color 0.15s;
   }
-  .method-btn:hover { border-color: var(--text-3); }
-  .method-btn.active { border-color: var(--accent); background: var(--accent-glow); }
-  .method-icon { font-size: 22px; }
-  .method-name { font-size: 13px; font-weight: 600; color: var(--text-1); }
-  .method-note { font-size: 11px; color: var(--text-3); }
+  .method:hover { border-color: #ccc; }
+  .method.sel { border-color: var(--pink); background: var(--pink-soft); }
+  .m-label { font-size: 13px; font-weight: 700; color: var(--text); }
+  .m-sub { font-size: 11px; color: var(--text-3); }
 
-  .error-msg {
-    background: rgba(255, 68, 102, 0.1);
-    border: 1px solid rgba(255, 68, 102, 0.3);
-    border-radius: var(--radius-sm);
-    padding: 12px 16px;
-    color: var(--danger);
-    font-size: 14px;
-    margin-bottom: 16px;
+  .err {
+    padding: 10px 14px;
+    background: #fff5f5;
+    border: 1px solid #fecaca;
+    border-radius: 8px;
+    color: var(--coral);
+    font-size: 13px;
+    margin-bottom: 12px;
   }
 
-  .checkout-submit { margin-bottom: 12px; }
-  .back-btn {
+  .pay-btn {
     width: 100%;
-    padding: 12px;
-    background: transparent;
-    border: 1px solid var(--border);
-    border-radius: var(--radius-sm);
-    color: var(--text-3);
-    font-size: 14px;
+    padding: 14px;
+    background: #000;
+    color: #fff;
+    border: none;
+    border-radius: 8px;
+    font-size: 16px;
+    font-weight: 700;
     cursor: pointer;
     font-family: inherit;
+    transition: opacity 0.15s;
   }
-  .back-btn:hover { border-color: var(--text-3); color: var(--text-2); }
+  .pay-btn:hover:not(:disabled) { opacity: 0.85; }
+  .pay-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
-  .checkout-security {
+  .secure-row {
     display: flex;
+    align-items: center;
     justify-content: center;
-    gap: 20px;
-    margin-top: 20px;
+    gap: 6px;
+    margin-top: 14px;
     font-size: 12px;
     color: var(--text-3);
   }
 
-  /* ══════ FAQ ══════ */
-  .faq-list { max-width: 700px; margin: 0 auto; }
-  .faq-item {
-    border-bottom: 1px solid var(--border);
-    padding: 0;
-  }
-  .faq-item summary {
-    padding: 20px 0;
-    font-size: 17px;
-    font-weight: 600;
-    cursor: pointer;
-    color: var(--text-1);
-    list-style: none;
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-  }
-  .faq-item summary::after { content: "+"; font-size: 20px; color: var(--accent); }
-  .faq-item[open] summary::after { content: "−"; }
-  .faq-item p { padding: 0 0 20px; color: var(--text-2); font-size: 15px; line-height: 1.6; }
-
-  /* ══════ FOOTER ══════ */
-  .footer { padding: 40px 0; border-top: 1px solid var(--border); }
-  .footer-content { display: flex; justify-content: space-between; align-items: center; }
-  .footer-brand { font-weight: 600; color: var(--text-3); }
-  .footer-links a { color: var(--text-3); text-decoration: none; font-size: 14px; }
-  .footer-links a:hover { color: var(--accent); }
-
-  /* ══════ RESPONSIVE ══════ */
+  /* ═══ RESPONSIVE ═══ */
   @media (max-width: 768px) {
-    .problem-grid { grid-template-columns: 1fr; gap: 40px; }
-    .cost-comparison { flex-direction: column; }
-    .feature-grid { grid-template-columns: 1fr; }
-    .hero-stats { flex-wrap: wrap; gap: 16px; padding: 16px 20px; }
-    .stat-divider { display: none; }
-    .method-grid { grid-template-columns: 1fr; }
-    .pricing-card, .checkout-card { padding: 28px 20px; }
-    .checkout-security { flex-direction: column; align-items: center; gap: 8px; }
+    .product-layout {
+      grid-template-columns: 1fr;
+      padding: 0 16px 40px;
+      gap: 24px;
+    }
+
+    .purchase-col {
+      position: relative;
+      top: 0;
+      order: -1;
+    }
+
+    .topbar { padding: 16px; }
+
+    .cover-grid { grid-template-columns: repeat(2, 1fr); }
+    .cover-inner { padding: 32px 20px; }
+
+    .methods { grid-template-columns: 1fr; }
   }
 </style>
