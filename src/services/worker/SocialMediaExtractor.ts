@@ -146,6 +146,54 @@ function stripHtml(html: string): string {
   return html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
 }
 
+/** Decode HTML entities like &amp; &#39; &quot; etc. */
+function decodeHtmlEntities(str: string): string {
+  return str
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&#x27;/g, "'")
+    .replace(/&#(\d+);/g, (_m, code) => String.fromCharCode(parseInt(code, 10)))
+    .replace(/&#x([0-9a-fA-F]+);/g, (_m, hex) => String.fromCharCode(parseInt(hex, 16)));
+}
+
+/**
+ * Resolve short/redirect URLs (fb.watch, redd.it, etc.) to their full destination.
+ * Follows redirects via HEAD request and returns the final URL.
+ */
+async function resolveShortUrl(url: string): Promise<string> {
+  try {
+    const res = await safeFetch(url, {
+      method: 'HEAD',
+      redirect: 'follow',
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+      },
+    }, 10000);
+    if (res?.url && res.url !== url) {
+      return res.url;
+    }
+  } catch {
+    // If HEAD fails, try GET
+    try {
+      const res = await safeFetch(url, {
+        redirect: 'follow',
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        },
+      }, 10000);
+      if (res?.url && res.url !== url) {
+        return res.url;
+      }
+    } catch {
+      // Fall through
+    }
+  }
+  return url;
+}
+
 /** Safely fetch with timeout */
 async function safeFetch(url: string, init?: RequestInit, timeoutMs = 15000): Promise<Response | null> {
   const controller = new AbortController();
@@ -344,7 +392,13 @@ async function extractTikTok(url: string): Promise<SocialExtractionResult | null
  */
 async function extractReddit(url: string): Promise<SocialExtractionResult | null> {
   try {
-    let jsonUrl = url.replace(/\?.*$/, '');
+    // Resolve redd.it short URLs to full reddit.com URLs first
+    let resolvedUrl = url;
+    if (/redd\.it\//i.test(url)) {
+      resolvedUrl = await resolveShortUrl(url);
+      logger.debug('CONTENT', `Resolved Reddit short URL: ${url} → ${resolvedUrl}`);
+    }
+    let jsonUrl = resolvedUrl.replace(/\?.*$/, '');
     if (!jsonUrl.endsWith('/')) jsonUrl += '/';
     jsonUrl += '.json';
 
@@ -401,13 +455,14 @@ async function extractReddit(url: string): Promise<SocialExtractionResult | null
  * The embed page at /p/{shortcode}/embed/captioned/ is public — no auth.
  */
 async function extractInstagram(url: string): Promise<SocialExtractionResult | null> {
-  const shortcodeMatch = url.match(/instagram\.com\/(?:p|reel|reels|tv)\/([A-Za-z0-9_-]+)/i);
+  const shortcodeMatch = url.match(/instagram\.com\/(p|reel|reels|tv)\/([A-Za-z0-9_-]+)/i);
 
   // Method 1: Instagram embed page (public HTML)
   if (shortcodeMatch) {
-    const shortcode = shortcodeMatch[1];
+    const urlType = shortcodeMatch[1]; // p, reel, reels, or tv
+    const shortcode = shortcodeMatch[2];
     try {
-      const embedUrl = `https://www.instagram.com/p/${shortcode}/embed/captioned/`;
+      const embedUrl = `https://www.instagram.com/${urlType}/${shortcode}/embed/captioned/`;
       const res = await safeFetch(embedUrl, {
         headers: {
           'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
@@ -430,14 +485,14 @@ async function extractInstagram(url: string): Promise<SocialExtractionResult | n
 
         const caption = captionMatch
           ? decodeUnicodeEscapes(
-              (captionMatch[1] || captionMatch[2] || '')
+              (captionMatch[1] || '')
                 .replace(/<[^>]+>/g, ' ')
                 .replace(/\\n/g, '\n')
                 .trim()
             )
           : '';
         const username = usernameMatch
-          ? (usernameMatch[1] || usernameMatch[2] || '').trim()
+          ? (usernameMatch[1] || '').trim()
           : '';
 
         if (caption || username) {
@@ -485,8 +540,8 @@ async function extractInstagram(url: string): Promise<SocialExtractionResult | n
       if (ogDesc || ogTitle) {
         const isVideo = /\/reel/i.test(url) || html.includes('og:video');
         return {
-          title: ogTitle?.[1] || 'Instagram Post',
-          content: ogDesc?.[1] || ogTitle?.[1] || '',
+          title: decodeHtmlEntities(ogTitle?.[1] || 'Instagram Post'),
+          content: decodeHtmlEntities(ogDesc?.[1] || ogTitle?.[1] || ''),
           content_type: isVideo ? 'social_video' : 'social_post',
           platform: 'instagram',
           metadata: {
@@ -510,11 +565,18 @@ async function extractInstagram(url: string): Promise<SocialExtractionResult | n
  * The embed plugin endpoint is public and renders post text.
  */
 async function extractFacebook(url: string): Promise<SocialExtractionResult | null> {
+  // Resolve fb.watch and fb.com short URLs to full facebook.com URLs first
+  let resolvedUrl = url;
+  if (/fb\.watch\//i.test(url) || /fb\.com\//i.test(url)) {
+    resolvedUrl = await resolveShortUrl(url);
+    logger.debug('CONTENT', `Resolved Facebook short URL: ${url} → ${resolvedUrl}`);
+  }
+
   const isVideo = /\/videos\/|\/watch\/|fb\.watch/i.test(url);
 
   // Method 1: Facebook embed plugin page (public)
   try {
-    const embedUrl = `https://www.facebook.com/plugins/post.php?href=${encodeURIComponent(url)}&show_text=true&width=500`;
+    const embedUrl = `https://www.facebook.com/plugins/post.php?href=${encodeURIComponent(resolvedUrl)}&show_text=true&width=500`;
     const res = await safeFetch(embedUrl, {
       headers: {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
@@ -577,7 +639,7 @@ async function extractFacebook(url: string): Promise<SocialExtractionResult | nu
 
   // Method 2: Mobile Facebook (simpler HTML, og:tags)
   try {
-    const mobileUrl = url.replace(/(?:www\.)?facebook\.com/, 'm.facebook.com');
+    const mobileUrl = resolvedUrl.replace(/(?:www\.|m\.|web\.)?facebook\.com/, 'm.facebook.com');
     const res = await safeFetch(mobileUrl, {
       headers: {
         'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1',
@@ -598,8 +660,8 @@ async function extractFacebook(url: string): Promise<SocialExtractionResult | nu
 
       if (ogDesc || ogTitle) {
         return {
-          title: ogTitle?.[1] || 'Facebook Post',
-          content: ogDesc?.[1] || ogTitle?.[1] || '',
+          title: decodeHtmlEntities(ogTitle?.[1] || 'Facebook Post'),
+          content: decodeHtmlEntities(ogDesc?.[1] || ogTitle?.[1] || ''),
           content_type: isVideo ? 'social_video' : 'social_post',
           platform: 'facebook',
           metadata: {
@@ -688,8 +750,8 @@ async function extractLinkedIn(url: string): Promise<SocialExtractionResult | nu
 
       if (ogDesc || ogTitle) {
         return {
-          title: ogTitle?.[1] || 'LinkedIn Post',
-          content: ogDesc?.[1] || ogTitle?.[1] || '',
+          title: decodeHtmlEntities(ogTitle?.[1] || 'LinkedIn Post'),
+          content: decodeHtmlEntities(ogDesc?.[1] || ogTitle?.[1] || ''),
           content_type: 'social_post',
           platform: 'linkedin',
           metadata: {
