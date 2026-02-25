@@ -447,12 +447,51 @@
       color: var(--text-3);
     }
 
+    /* ═══ STICKY MOBILE CTA ═══ */
+    .mobile-cta {
+      display: none;
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      background: #fff;
+      border-top: 1px solid var(--border);
+      padding: 12px 16px;
+      z-index: 100;
+      box-shadow: 0 -4px 16px rgba(0,0,0,0.08);
+    }
+    .mobile-cta-inner {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      max-width: 600px;
+      margin: 0 auto;
+    }
+    .mobile-cta-price {
+      font-size: 22px;
+      font-weight: 900;
+      letter-spacing: -0.02em;
+    }
+    .mobile-cta-btn {
+      padding: 12px 28px;
+      background: var(--pink);
+      color: #000;
+      border: none;
+      border-radius: 8px;
+      font-size: 15px;
+      font-weight: 700;
+      cursor: pointer;
+      font-family: inherit;
+      box-shadow: 0 2px 10px rgba(255, 144, 232, 0.3);
+    }
+
     /* ═══ RESPONSIVE ═══ */
     @media (max-width: 768px) {
       .product-layout {
         grid-template-columns: 1fr;
         padding: 0 16px 40px;
         gap: 24px;
+        padding-bottom: 80px;
       }
       .purchase-col {
         position: relative;
@@ -463,6 +502,7 @@
       .cover-grid { grid-template-columns: repeat(2, 1fr); }
       .cover-inner { padding: 32px 20px; }
       .methods { grid-template-columns: 1fr; }
+      .mobile-cta { display: block; }
     }
   </style>
 </head>
@@ -738,6 +778,14 @@
 
   </main>
 
+  <!-- Sticky mobile CTA — visible only on mobile, only when purchase card is scrolled past -->
+  <div class="mobile-cta" id="mobileCta">
+    <div class="mobile-cta-inner">
+      <span class="mobile-cta-price">$47</span>
+      <button class="mobile-cta-btn" id="mobileBuyBtn">I want this!</button>
+    </div>
+  </div>
+
   <script>
     (function () {
       'use strict';
@@ -757,12 +805,24 @@
 
       // ── Show checkout ──
       var card = document.getElementById('purchaseCard');
-      document.getElementById('buyBtn').addEventListener('click', function () {
+      function openCheckout() {
         card.classList.add('checkout-mode');
-      });
+        card.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
+      document.getElementById('buyBtn').addEventListener('click', openCheckout);
+      document.getElementById('mobileBuyBtn').addEventListener('click', openCheckout);
       document.getElementById('checkoutBack').addEventListener('click', function () {
         card.classList.remove('checkout-mode');
       });
+
+      // ── Sticky mobile CTA: show only when purchase card is out of view ──
+      var mobileCta = document.getElementById('mobileCta');
+      if (window.matchMedia('(max-width: 768px)').matches) {
+        var observer = new IntersectionObserver(function (entries) {
+          mobileCta.style.display = entries[0].isIntersecting ? 'none' : 'block';
+        }, { threshold: 0 });
+        observer.observe(card);
+      }
 
       // ── Payment method selector ──
       var payBtnLabels = { paypal: 'Pay', installment: 'Pay $15.67 today', coinbase: 'Pay with Crypto' };
