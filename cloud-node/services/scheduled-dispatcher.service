@@ -1,0 +1,16 @@
+[Unit]
+Description=Browning Cloud Node — Scheduled Task Dispatcher
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=agent
+ExecStart=/home/agent/claude-mem/cloud-node/scripts/scheduled-dispatcher.sh
+EnvironmentFile=/home/agent/.config/task-watcher.env
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=scheduled-dispatcher
+
+[Install]
+WantedBy=multi-user.target

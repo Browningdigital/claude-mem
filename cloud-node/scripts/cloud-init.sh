@@ -277,6 +277,17 @@ else
     echo "$(date): Task watcher service file not found — install manually after cloning repo."
 fi
 
+# Install scheduled task dispatcher (autonomous agent rhythm)
+cp /home/$AGENT_USER/claude-mem/cloud-node/services/scheduled-dispatcher.service /etc/systemd/system/ 2>/dev/null || true
+cp /home/$AGENT_USER/claude-mem/cloud-node/services/scheduled-dispatcher.timer /etc/systemd/system/ 2>/dev/null || true
+chmod +x /home/$AGENT_USER/claude-mem/cloud-node/scripts/scheduled-dispatcher.sh 2>/dev/null || true
+chmod +x /home/$AGENT_USER/claude-mem/cloud-node/scripts/content-ingest-poll.sh 2>/dev/null || true
+if [[ -f /etc/systemd/system/scheduled-dispatcher.timer ]]; then
+    systemctl daemon-reload
+    systemctl enable scheduled-dispatcher.timer
+    echo "$(date): Scheduled dispatcher installed (starts after Claude Code auth)."
+fi
+
 # ── Step 12b: Chat relay server (interactive Claude Code from iPhone) ──
 RELAY_TOKEN=$(openssl rand -hex 32)
 

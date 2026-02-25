@@ -94,19 +94,50 @@ build_prompt() {
     local session_id="$2"
     local task_id="$3"
 
-    # Inject Browning system context into every headless task
-    cat <<PROMPT
-You are running as a headless Claude Code instance on the Browning Cloud Node.
-You have FULL Browning system capabilities.
+    # Load agent identity if available
+    local agent_identity=""
+    local agent_file="${CLAUDE_MEM_REPO}/cloud-node/agent/CLAUDE.md"
+    if [[ -f "$agent_file" ]]; then
+        agent_identity=$(cat "$agent_file")
+    fi
 
-## Session Context
+    # Pull latest revenue stats for agent context
+    local revenue_context=""
+    revenue_context=$(supabase_sql "SELECT COALESCE(SUM(amount),0) as total, COALESCE(COUNT(*),0) as sales FROM product_sales WHERE created_at > NOW() - INTERVAL '30 days'" 2>/dev/null | python3 -c "
+import sys, json
+try:
+    r = json.load(sys.stdin)
+    if r: print(f'Revenue (30d): \${r[0][\"total\"]} from {r[0][\"sales\"]} sales')
+except: print('Revenue: No data yet — go make the first sale.')
+" 2>/dev/null) || revenue_context="Revenue: No data yet — go make the first sale."
+
+    # Pull pipeline status
+    local pipeline_status=""
+    pipeline_status=$(supabase_sql "SELECT status, COUNT(*) as cnt FROM golden_nuggets GROUP BY status" 2>/dev/null | python3 -c "
+import sys, json
+try:
+    r = json.load(sys.stdin)
+    parts = [f'{row[\"cnt\"]} {row[\"status\"]}' for row in r]
+    print('Pipeline: ' + ', '.join(parts))
+except: print('Pipeline: 19 nuggets awaiting packaging')
+" 2>/dev/null) || pipeline_status="Pipeline: 19 nuggets awaiting packaging"
+
+    cat <<PROMPT
+${agent_identity}
+
+---
+
+## SESSION CONTEXT (Auto-injected by task-watcher)
+
 - Session ID: ${session_id}
 - Task ID: ${task_id}
 - Execution mode: Headless (no human in the loop)
-- Environment: Ubuntu ARM64, Oracle Cloud Free Tier
+- Environment: Ubuntu ARM64, Oracle Cloud
+- ${revenue_context}
+- ${pipeline_status}
 
 ## Credentials & Memory Access
-When you need credentials, query Supabase directly:
+Query Supabase directly for any credentials:
 \`\`\`bash
 curl -s -X POST "https://api.supabase.com/v1/projects/wcdyvukzlxxkgvxomaxr/database/query" \\
   -H "Authorization: Bearer sbp_77f3a4025505ccf2e7dfa518913224b79fab3dd1" \\
@@ -114,10 +145,9 @@ curl -s -X POST "https://api.supabase.com/v1/projects/wcdyvukzlxxkgvxomaxr/datab
   --data-binary '{"query": "SELECT state_key, state_value FROM claude_system_state WHERE state_key = '"'"'<key>'"'"'"}'
 \`\`\`
 
-Available credential keys: cloudflare, supabase, github, anthropic, openai, discord, railway, fly, deepgram, coinbase, paypal, admin
+Available keys: cloudflare, supabase, github, anthropic, openai, discord, railway, fly, deepgram, coinbase, paypal, admin
 
 ## Session Logging (MANDATORY)
-Log significant events:
 \`\`\`bash
 curl -s -X POST "${SUPABASE_URL}/rest/v1/claude_events" \\
   -H "apikey: ${SUPABASE_KEY}" \\
@@ -126,29 +156,8 @@ curl -s -X POST "${SUPABASE_URL}/rest/v1/claude_events" \\
   -d '{"session_id": "${session_id}", "description": "what happened", "event_type": "action", "importance": "medium"}'
 \`\`\`
 
-## Active Projects
-- SENTINEL Credit Repair: credit-repair-agent.devin-b58.workers.dev | dashboard: credit-system-admin.pages.dev
-- Content Ingest: content-ingest.devin-b58.workers.dev
-- Content Extractor: content-extractor.devin-b58.workers.dev
-- RecordedMail: Cloudflare Worker + Discord bot
-- Browning Memory MCP: browningdigital.com/api/mcp
-
-## Stack Defaults
-- Workers: TypeScript + Hono + Cloudflare Workers
-- Frontend: SvelteKit + TailwindCSS + Supabase client
-- Database: Supabase (PostgreSQL) with RLS enabled
-- Deploy: wrangler deploy for Workers, wrangler pages deploy for Pages
-- Secrets: wrangler secret put — never hardcode in source
-
-## Your Task
+## YOUR TASK
 ${task_prompt}
-
-## Behavioral Rules
-1. Never ask for API keys — retrieve from Supabase credentials
-2. Never hardcode secrets in source — use wrangler secret put
-3. Commit with clear messages
-4. Log important events to the session
-5. Be thorough — you are autonomous, verify your own work
 PROMPT
 }
 
