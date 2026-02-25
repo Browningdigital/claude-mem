@@ -16,10 +16,11 @@ RestartSec=10
 # Environment
 EnvironmentFile=/home/agent/.config/task-watcher.env
 
-# Security hardening
-NoNewPrivileges=false
-ProtectSystem=false
-ProtectHome=false
+# Security hardening — agent needs home dir access for workspace
+# but restrict everything else
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=/home/agent/workspace /home/agent/claude-mem /home/agent/.config /tmp
 
 # Logging
 StandardOutput=journal

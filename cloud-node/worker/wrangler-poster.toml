@@ -1,0 +1,29 @@
+name = "content-queue-poster"
+main = "content-queue-poster.ts"
+compatibility_date = "2025-02-01"
+
+# Cron trigger — runs every 15 minutes to process content_queue
+[triggers]
+crons = ["*/15 * * * *"]
+
+# Deploy: wrangler deploy -c wrangler-poster.toml
+# Secrets (set before deploying):
+#   wrangler secret put SUPABASE_URL -c wrangler-poster.toml
+#   wrangler secret put SUPABASE_KEY -c wrangler-poster.toml
+#
+# Social platform credentials are stored in Supabase claude_system_state:
+#   twitter_credentials: { api_key, api_secret, access_token, access_secret }
+#   linkedin_credentials: { access_token, person_urn }
+#
+# To set up Twitter/X:
+#   1. Create app at https://developer.twitter.com/en/portal
+#   2. Enable OAuth 2.0 with tweet.write scope
+#   3. Generate User Access Token
+#   4. Store in claude_system_state via Browning Memory MCP
+#
+# To set up LinkedIn:
+#   1. Create app at https://www.linkedin.com/developers
+#   2. Request w_member_social scope
+#   3. Generate access token (expires every 60 days)
+#   4. Get person URN from /v2/me endpoint
+#   5. Store in claude_system_state via Browning Memory MCP

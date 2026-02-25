@@ -21,7 +21,15 @@ interface Env {
   SUPABASE_URL: string;
   SUPABASE_KEY: string;       // service_role_key for full access
   TASK_AUTH_TOKEN: string;    // bearer token for auth (generate: openssl rand -hex 32)
+  ALLOWED_ORIGIN?: string;   // restrict CORS origin (default: '*' — set to your domain in production)
 }
+
+// ── Input validation constants ──
+const MAX_PROMPT_LENGTH = 50000;   // 50KB prompt limit
+const MAX_TIMEOUT_MINUTES = 120;   // 2 hour max
+const MAX_REPO_LENGTH = 500;
+const MAX_BRANCH_LENGTH = 200;
+const VALID_URL_PATTERN = /^https?:\/\//;
 
 interface Task {
   id?: string;
@@ -116,6 +124,18 @@ export default {
           return json({ error: 'prompt is required' }, 400);
         }
 
+        // ── Input validation ──
+        if (body.prompt.length > MAX_PROMPT_LENGTH) {
+          return json({ error: `prompt exceeds ${MAX_PROMPT_LENGTH} character limit` }, 400);
+        }
+        if (body.repo && (!VALID_URL_PATTERN.test(body.repo) || body.repo.length > MAX_REPO_LENGTH)) {
+          return json({ error: 'repo must be a valid HTTP(S) URL' }, 400);
+        }
+        if (body.branch && (body.branch.length > MAX_BRANCH_LENGTH || /[;&|`$]/.test(body.branch))) {
+          return json({ error: 'invalid branch name' }, 400);
+        }
+        const timeoutMin = Math.min(Math.max(body.timeout_minutes || 30, 1), MAX_TIMEOUT_MINUTES);
+
         const task = {
           prompt: body.prompt,
           repo: body.repo || null,
@@ -124,7 +144,7 @@ export default {
           priority: body.priority || 'normal',
           skip_permissions: body.skip_permissions ?? false,
           continue_session: body.continue_session ?? false,
-          timeout_minutes: body.timeout_minutes || 30,
+          timeout_minutes: timeoutMin,
           status: 'queued',
           output: null,
           error: null,
@@ -153,14 +173,15 @@ export default {
         return json({ task: result[0] });
       }
 
-      // GET /tasks — List recent tasks
+      // GET /tasks — List recent tasks (with pagination)
       if (request.method === 'GET' && path === '/tasks') {
-        const limit = url.searchParams.get('limit') || '20';
+        const limit = Math.min(parseInt(url.searchParams.get('limit') || '20'), 100);
+        const offset = parseInt(url.searchParams.get('offset') || '0');
         const status = url.searchParams.get('status');
-        let filter = `order=created_at.desc&limit=${limit}`;
-        if (status) filter += `&status=eq.${status}`;
+        let filter = `order=created_at.desc&limit=${limit}&offset=${offset}`;
+        if (status && /^[a-z]+$/.test(status)) filter += `&status=eq.${status}`;
         const result = await supabaseQuery(env, 'cloud_node_tasks', filter);
-        return json({ tasks: result, count: result.length });
+        return json({ tasks: result, count: result.length, offset, limit });
       }
 
       // POST /task/:id/cancel — Cancel a task
@@ -233,9 +254,10 @@ function supabaseHeaders(env: Env): Record<string, string> {
   };
 }
 
-function corsHeaders(): Record<string, string> {
+function corsHeaders(env?: Env): Record<string, string> {
+  const origin = env?.ALLOWED_ORIGIN || '*';
   return {
-    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Origin': origin,
     'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
     'Access-Control-Allow-Headers': 'Content-Type, Authorization',
   };

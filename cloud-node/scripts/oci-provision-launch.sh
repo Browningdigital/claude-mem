@@ -32,8 +32,11 @@ SUCCESS_ID="/tmp/oci-instance-created.id"
 SUCCESS_IP="/tmp/oci-instance-created.ip"
 
 # ── Supabase config for credential lookup ──
-SUPABASE_API="https://api.supabase.com/v1/projects/wcdyvukzlxxkgvxomaxr/database/query"
-SUPABASE_TOKEN="sbp_77f3a4025505ccf2e7dfa518913224b79fab3dd1"
+SUPABASE_API="${SUPABASE_ADMIN_API:-https://api.supabase.com/v1/projects/wcdyvukzlxxkgvxomaxr/database/query}"
+SUPABASE_TOKEN="${SUPABASE_ADMIN_TOKEN:-}"
+if [[ -z "$SUPABASE_TOKEN" ]]; then
+    warn "SUPABASE_ADMIN_TOKEN not set — cannot auto-fetch OCI credentials from Supabase"
+fi
 
 # ── Colors ──
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; CYAN='\033[0;36m'; NC='\033[0m'

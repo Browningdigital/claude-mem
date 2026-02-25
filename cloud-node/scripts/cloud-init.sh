@@ -257,15 +257,21 @@ sudo -u "$AGENT_USER" bash -c '
 # ── Step 12: Task watcher setup ──
 sudo -u "$AGENT_USER" mkdir -p /home/$AGENT_USER/.config /home/$AGENT_USER/workspace
 
-# Env file — credentials will be fetched from Supabase on first task
-sudo -u "$AGENT_USER" tee /home/$AGENT_USER/.config/task-watcher.env > /dev/null <<TWEOF
+# Env file — PLACEHOLDER credentials: fill in after bootstrap via
+# Browning Memory MCP or Supabase Management API.
+# The task-watcher won't start until Claude Code is authenticated anyway.
+cat > /home/$AGENT_USER/.config/task-watcher.env <<TWEOF
 SUPABASE_URL=https://wcdyvukzlxxkgvxomaxr.supabase.co
-SUPABASE_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6IndjZHl2dWt6bHh4a2d2eG9tYXhyIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2OTY1OTc2OCwiZXhwIjoyMDg1MjM1NzY4fQ.AnjP6QLSbjVjXOKLtL2icevxM3gV1Ab0LtGdQVuzP2U
+SUPABASE_KEY=<FILL_SERVICE_ROLE_KEY>
+SUPABASE_ADMIN_API=https://api.supabase.com/v1/projects/wcdyvukzlxxkgvxomaxr/database/query
+SUPABASE_ADMIN_TOKEN=<FILL_ADMIN_TOKEN>
 WORKSPACE_DIR=/home/agent/workspace
 CLAUDE_MEM_REPO=/home/agent/claude-mem
 POLL_INTERVAL=5
 MAX_CONCURRENT=2
 TWEOF
+chmod 600 /home/$AGENT_USER/.config/task-watcher.env
+chown $AGENT_USER:$AGENT_USER /home/$AGENT_USER/.config/task-watcher.env
 
 # Install task watcher service
 cp /home/$AGENT_USER/claude-mem/cloud-node/services/task-watcher.service /etc/systemd/system/ 2>/dev/null || true
@@ -296,16 +302,18 @@ sudo -u "$AGENT_USER" bash -c "
     npm install --production 2>&1 || true
 "
 
-# Relay env file
-sudo -u "$AGENT_USER" tee /home/$AGENT_USER/.config/relay.env > /dev/null <<RLEOF
+# Relay env file — PLACEHOLDER key: fill in after bootstrap
+cat > /home/$AGENT_USER/.config/relay.env <<RLEOF
 RELAY_PORT=3000
 RELAY_AUTH_TOKEN=${RELAY_TOKEN}
 WORKSPACE_DIR=/home/${AGENT_USER}/workspace
 CLAUDE_MEM_REPO=/home/${AGENT_USER}/claude-mem
 SUPABASE_URL=https://wcdyvukzlxxkgvxomaxr.supabase.co
-SUPABASE_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6IndjZHl2dWt6bHh4a2d2eG9tYXhyIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2OTY1OTc2OCwiZXhwIjoyMDg1MjM1NzY4fQ.AnjP6QLSbjVjXOKLtL2icevxM3gV1Ab0LtGdQVuzP2U
+SUPABASE_KEY=<FILL_SERVICE_ROLE_KEY>
 MAX_CONCURRENT=3
 RLEOF
+chmod 600 /home/$AGENT_USER/.config/relay.env
+chown $AGENT_USER:$AGENT_USER /home/$AGENT_USER/.config/relay.env
 
 # Relay systemd service
 cat > /etc/systemd/system/cloud-node-relay.service <<RSEOF

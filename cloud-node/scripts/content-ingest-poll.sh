@@ -18,25 +18,30 @@
 
 set -euo pipefail
 
-SUPABASE_API="https://api.supabase.com/v1/projects/wcdyvukzlxxkgvxomaxr/database/query"
-SUPABASE_TOKEN="sbp_77f3a4025505ccf2e7dfa518913224b79fab3dd1"
-SUPABASE_URL="${SUPABASE_URL:-https://wcdyvukzlxxkgvxomaxr.supabase.co}"
-SUPABASE_KEY="${SUPABASE_KEY:-eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6IndjZHl2dWt6bHh4a2d2eG9tYXhyIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2OTY1OTc2OCwiZXhwIjoyMDg1MjM1NzY4fQ.AnjP6QLSbjVjXOKLtL2icevxM3gV1Ab0LtGdQVuzP2U}"
+SUPABASE_API="${SUPABASE_ADMIN_API:-https://api.supabase.com/v1/projects/wcdyvukzlxxkgvxomaxr/database/query}"
+SUPABASE_TOKEN="${SUPABASE_ADMIN_TOKEN:?SUPABASE_ADMIN_TOKEN env var is required}"
+SUPABASE_URL="${SUPABASE_URL:?SUPABASE_URL env var is required}"
+SUPABASE_KEY="${SUPABASE_KEY:?SUPABASE_KEY env var is required}"
 
 LOGFILE="/tmp/content-ingest-poll.log"
 LOCKFILE="/tmp/content-ingest-poll.lock"
 
+# Rotate log if > 1MB
+if [[ -f "$LOGFILE" ]] && [[ $(stat -f%z "$LOGFILE" 2>/dev/null || stat -c%s "$LOGFILE" 2>/dev/null || echo 0) -gt 1048576 ]]; then
+    mv "$LOGFILE" "${LOGFILE}.old"
+fi
+
 log() { echo "$(date '+%Y-%m-%d %H:%M:%S') $*" >> "$LOGFILE"; }
 
-# Prevent overlapping runs
+# Prevent overlapping runs (with timeout — don't wait forever)
 exec 200>"$LOCKFILE"
-flock -n 200 || { log "Already running, skipping"; exit 0; }
+flock -w 300 200 || { log "Lock held for >5 min, skipping"; exit 0; }
 
 supabase_sql() {
-    curl -sf -X POST "$SUPABASE_API" \
+    curl -sf --max-time 30 -X POST "$SUPABASE_API" \
         -H "Authorization: Bearer $SUPABASE_TOKEN" \
         -H "Content-Type: application/json" \
-        --data-binary "$(python3 -c "import json,sys; print(json.dumps({'query': sys.stdin.read()}))" <<< "$1")" 2>/dev/null
+        --data-binary "$(python3 -c "import json,sys; print(json.dumps({'query': sys.stdin.read()}))" <<< "$1")"
 }
 
 # ── Check for new unprocessed content ──

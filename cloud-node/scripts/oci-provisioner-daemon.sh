@@ -84,6 +84,12 @@ flock -n 200 || { echo "Another instance is already running (lockfile: $LOCKFILE
 # ── Write PID ──
 echo $$ > "$PIDFILE"
 
+# ── Validate cloud-init exists ──
+if [[ -n "$CLOUD_INIT" && ! -f "$CLOUD_INIT" ]]; then
+    echo "WARNING: cloud-init script not found at $CLOUD_INIT"
+    echo "Instance will be created WITHOUT bootstrap. Set OCI_CLOUD_INIT to a valid path."
+fi
+
 # ── Build metadata ──
 SSH_KEY=$(cat "$SSH_KEY_FILE")
 METADATA="{\"ssh_authorized_keys\": \"$SSH_KEY\"}"
@@ -126,6 +132,26 @@ on_success() {
     echo "$instance_id" > /tmp/oci-instance-created.id
     echo "$ip" > /tmp/oci-instance-created.ip
     echo "$ad" > /tmp/oci-instance-created.ad
+
+    # Wait for SSH connectivity (instance needs time to boot)
+    if [[ "$ip" != "pending" ]]; then
+        log "Waiting for SSH connectivity on $ip..."
+        local ssh_ready=false
+        for i in $(seq 1 30); do
+            if timeout 5 ssh -o ConnectTimeout=3 -o StrictHostKeyChecking=no \
+                -i "${SSH_KEY_FILE%.pub}" "ubuntu@$ip" "echo ok" 2>/dev/null | grep -q "ok"; then
+                ssh_ready=true
+                break
+            fi
+            log "  SSH attempt $i/30 — not ready yet"
+            sleep 10
+        done
+        if $ssh_ready; then
+            log "SSH connection verified!"
+        else
+            log "WARNING: SSH not reachable after 5 minutes. Instance may still be bootstrapping."
+        fi
+    fi
 
     rm -f "$PIDFILE" "$LOCKFILE"
     exit 0

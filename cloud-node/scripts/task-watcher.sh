@@ -10,10 +10,12 @@
 # Runs as a systemd service on the VPS.
 #
 # Required env vars (set in /home/agent/.config/task-watcher.env):
-#   SUPABASE_URL      — https://wcdyvukzlxxkgvxomaxr.supabase.co
-#   SUPABASE_KEY      — service_role_key
-#   WORKSPACE_DIR     — /home/agent/workspace
-#   CLAUDE_MEM_REPO   — /home/agent/claude-mem (repo with CLAUDE.md)
+#   SUPABASE_URL        — https://wcdyvukzlxxkgvxomaxr.supabase.co
+#   SUPABASE_KEY        — service_role_key
+#   SUPABASE_ADMIN_API  — Supabase Management API URL
+#   SUPABASE_ADMIN_TOKEN — Supabase Management API token
+#   WORKSPACE_DIR       — /home/agent/workspace
+#   CLAUDE_MEM_REPO     — /home/agent/claude-mem (repo with CLAUDE.md)
 
 set -euo pipefail
 
@@ -21,9 +23,13 @@ POLL_INTERVAL="${POLL_INTERVAL:-5}"
 MAX_CONCURRENT="${MAX_CONCURRENT:-2}"
 WORKSPACE_DIR="${WORKSPACE_DIR:-/home/agent/workspace}"
 CLAUDE_MEM_REPO="${CLAUDE_MEM_REPO:-/home/agent/claude-mem}"
+MAX_RETRY="${MAX_RETRY:-2}"
 RUNNING_TASKS=0
 
 log() { echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1"; }
+
+# SQL-safe string escaping (prevent SQL injection)
+sql_escape() { echo "$1" | sed "s/'/''/g"; }
 
 mkdir -p "$WORKSPACE_DIR"
 
@@ -50,9 +56,14 @@ supabase_update() {
 
 supabase_sql() {
     local query="$1"
-    curl -s -X POST \
-        "https://api.supabase.com/v1/projects/wcdyvukzlxxkgvxomaxr/database/query" \
-        -H "Authorization: Bearer sbp_77f3a4025505ccf2e7dfa518913224b79fab3dd1" \
+    local api_url="${SUPABASE_ADMIN_API:-https://api.supabase.com/v1/projects/wcdyvukzlxxkgvxomaxr/database/query}"
+    local api_token="${SUPABASE_ADMIN_TOKEN:-}"
+    if [[ -z "$api_token" ]]; then
+        log "WARNING: SUPABASE_ADMIN_TOKEN not set — supabase_sql calls will fail"
+        return 1
+    fi
+    curl -s --max-time 30 -X POST "$api_url" \
+        -H "Authorization: Bearer $api_token" \
         -H "Content-Type: application/json" \
         --data-binary "{\"query\": $(echo "$query" | jq -Rs .)}"
 }
@@ -63,9 +74,11 @@ register_session() {
     local task_id="$1"
     local prompt="$2"
     local session_id="cloud-node-${task_id}"
+    local safe_prompt
+    safe_prompt=$(sql_escape "${prompt:0:200}")
 
     # Register session in claude_sessions
-    supabase_sql "INSERT INTO claude_sessions (session_id, started_at, status, goals, session_type, priority) VALUES ('${session_id}', NOW(), 'active', ARRAY['${prompt:0:200}'], 'build', 'normal') ON CONFLICT (session_id) DO NOTHING"
+    supabase_sql "INSERT INTO claude_sessions (session_id, started_at, status, goals, session_type, priority) VALUES ('${session_id}', NOW(), 'active', ARRAY['${safe_prompt}'], 'build', 'normal') ON CONFLICT (session_id) DO NOTHING" 2>/dev/null || true
 
     echo "$session_id"
 }
@@ -77,14 +90,18 @@ write_handoff() {
     local output="$4"
     local status="$5"
 
-    # Write handoff
+    local safe_prompt safe_status
+    safe_prompt=$(sql_escape "${prompt:0:100}")
+    safe_status=$(sql_escape "$status")
+
+    # Write handoff — output is JSON-escaped to prevent injection
     local output_escaped
     output_escaped=$(echo "$output" | head -c 5000 | jq -Rsa .)
 
-    supabase_sql "INSERT INTO session_handoffs (session_source, quick_context, what_we_did, current_state, next_steps) VALUES ('Cloud Node', 'Headless task: ${prompt:0:100}', ${output_escaped}, '${status}', '')"
+    supabase_sql "INSERT INTO session_handoffs (session_source, quick_context, what_we_did, current_state, next_steps) VALUES ('Cloud Node', 'Headless task: ${safe_prompt}', ${output_escaped}, '${safe_status}', '')" 2>/dev/null || true
 
     # End session
-    supabase_sql "UPDATE claude_sessions SET status = 'completed', ended_at = NOW(), outcomes = ARRAY['${status}'] WHERE session_id = '${session_id}'"
+    supabase_sql "UPDATE claude_sessions SET status = 'completed', ended_at = NOW(), outcomes = ARRAY['${safe_status}'] WHERE session_id = '${session_id}'" 2>/dev/null || true
 }
 
 # ── Build the full-capability prompt ──
@@ -139,11 +156,13 @@ ${agent_identity}
 ## Credentials & Memory Access
 Query Supabase directly for any credentials:
 \`\`\`bash
-curl -s -X POST "https://api.supabase.com/v1/projects/wcdyvukzlxxkgvxomaxr/database/query" \\
-  -H "Authorization: Bearer sbp_77f3a4025505ccf2e7dfa518913224b79fab3dd1" \\
+curl -s -X POST "\${SUPABASE_ADMIN_API}" \\
+  -H "Authorization: Bearer \${SUPABASE_ADMIN_TOKEN}" \\
   -H "Content-Type: application/json" \\
   --data-binary '{"query": "SELECT state_key, state_value FROM claude_system_state WHERE state_key = '"'"'<key>'"'"'"}'
 \`\`\`
+
+Environment variables available: SUPABASE_URL, SUPABASE_KEY, SUPABASE_ADMIN_API, SUPABASE_ADMIN_TOKEN
 
 Available keys: cloudflare, supabase, github, anthropic, openai, discord, railway, fly, deepgram, coinbase, paypal, admin
 
@@ -190,17 +209,24 @@ execute_task() {
     local task_dir="${WORKSPACE_DIR}/${task_id}"
     mkdir -p "$task_dir"
 
-    # Clone repo if specified
+    # Clone repo if specified (with timeout)
     if [[ -n "$repo" ]]; then
         log "  Cloning $repo..."
-        git clone "$repo" "$task_dir/repo" 2>/dev/null || true
-        if [[ -n "$branch" ]]; then
-            cd "$task_dir/repo" && git checkout "$branch" 2>/dev/null || true
+        timeout 120 git clone "$repo" "$task_dir/repo" 2>/dev/null || log "  WARNING: git clone failed for $repo"
+        if [[ -n "$branch" && -d "$task_dir/repo" ]]; then
+            git -C "$task_dir/repo" checkout "$branch" 2>/dev/null || true
         fi
-        working_dir="${task_dir}/repo"
+        if [[ -d "$task_dir/repo" ]]; then
+            working_dir="${task_dir}/repo"
+        fi
     fi
 
     local exec_dir="${working_dir:-$task_dir}"
+    # Validate exec_dir exists
+    if [[ ! -d "$exec_dir" ]]; then
+        log "  WARNING: exec_dir $exec_dir does not exist, falling back to task_dir"
+        exec_dir="$task_dir"
+    fi
     local output_file="${task_dir}/output.txt"
     local error_file="${task_dir}/error.txt"
 
@@ -231,7 +257,7 @@ execute_task() {
     local exit_code=0
 
     cd "$exec_dir"
-    echo "$full_prompt" | timeout "${timeout_sec}" $claude_cmd \
+    echo "$full_prompt" | timeout --kill-after=30 "${timeout_sec}" $claude_cmd \
         > "$output_file" 2> "$error_file" || exit_code=$?
 
     # Read output (truncate if huge)
@@ -253,8 +279,14 @@ execute_task() {
         status="failed"
     fi
 
-    # Escape JSON strings
+    # Escape JSON strings (with truncation indicator)
     local output_json error_json
+    local output_len=${#output}
+    if [[ $output_len -ge 49000 ]]; then
+        output="${output}
+
+[OUTPUT TRUNCATED — original was ${output_len} bytes. First 50KB shown.]"
+    fi
     output_json=$(echo "$output" | jq -Rsa .)
     error_json=$(echo "$error" | jq -Rsa .)
 
@@ -269,6 +301,30 @@ execute_task() {
     # Write Browning handoff
     write_handoff "$task_id" "$session_id" "$prompt" "$output" "$status"
 
+    # Retry logic — requeue failed tasks (up to MAX_RETRY attempts)
+    if [[ "$status" == "failed" ]]; then
+        local retry_count
+        retry_count=$(echo "$task_json" | jq -r '.metadata.retry_count // 0' 2>/dev/null || echo 0)
+        if [[ "$retry_count" -lt "$MAX_RETRY" ]]; then
+            local new_retry=$((retry_count + 1))
+            log "RETRY task ${task_id}: attempt ${new_retry}/${MAX_RETRY}"
+            # Requeue with incremented retry count
+            local retry_data
+            retry_data=$(jq -n --arg prompt "$prompt" --arg repo "$repo" --arg branch "$branch" \
+                --argjson retry "$new_retry" --argjson timeout "$timeout_min" \
+                '{prompt: $prompt, repo: ($repo // null), branch: ($branch // null),
+                  priority: "normal", timeout_minutes: $timeout, status: "queued",
+                  metadata: {retry_count: $retry, original_task_id: "'"$task_id"'"},
+                  created_at: (now | todate)}')
+            curl -s -X POST "${SUPABASE_URL}/rest/v1/cloud_node_tasks" \
+                -H "apikey: ${SUPABASE_KEY}" -H "Authorization: Bearer ${SUPABASE_KEY}" \
+                -H "Content-Type: application/json" -H "Prefer: return=minimal" \
+                -d "$retry_data" > /dev/null 2>&1 || true
+        else
+            log "FAILED task ${task_id}: max retries (${MAX_RETRY}) exhausted"
+        fi
+    fi
+
     log "DONE task ${task_id}: status=${status} (exit_code=${exit_code})"
 
     RUNNING_TASKS=$((RUNNING_TASKS - 1))
@@ -280,10 +336,10 @@ log "Task watcher started. Polling every ${POLL_INTERVAL}s. Max concurrent: ${MA
 log "Workspace: ${WORKSPACE_DIR}"
 log "CLAUDE.md source: ${CLAUDE_MEM_REPO}"
 
-# Keep claude-mem repo up to date
+# Keep claude-mem repo up to date (with timeout to prevent hangs)
 if [[ -d "${CLAUDE_MEM_REPO}/.git" ]]; then
-    cd "$CLAUDE_MEM_REPO" && git pull --ff-only 2>/dev/null || true
-    log "claude-mem repo updated."
+    timeout 30 git -C "$CLAUDE_MEM_REPO" pull --ff-only 2>/dev/null || log "WARNING: claude-mem repo update failed or timed out"
+    log "claude-mem repo synced."
 fi
 
 while true; do

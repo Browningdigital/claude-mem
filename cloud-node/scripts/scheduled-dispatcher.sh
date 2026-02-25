@@ -24,12 +24,16 @@ flock -n 200 || exit 0
 
 log() { echo "$(date '+%Y-%m-%d %H:%M:%S') $*" >> "$LOGFILE"; }
 
-# ── All logic in Python for clean JSON handling ──
-python3 << 'PYEOF'
-import json, urllib.request, datetime, sys
+# ── Validate required env vars ──
+: "${SUPABASE_URL:?SUPABASE_URL env var is required}"
+: "${SUPABASE_KEY:?SUPABASE_KEY env var is required}"
 
-URL = "https://wcdyvukzlxxkgvxomaxr.supabase.co/rest/v1"
-KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6IndjZHl2dWt6bHh4a2d2eG9tYXhyIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2OTY1OTc2OCwiZXhwIjoyMDg1MjM1NzY4fQ.AnjP6QLSbjVjXOKLtL2icevxM3gV1Ab0LtGdQVuzP2U"
+# ── All logic in Python for clean JSON handling ──
+python3 - "$SUPABASE_URL" "$SUPABASE_KEY" << 'PYEOF'
+import json, urllib.request, datetime, sys, os
+
+URL = sys.argv[1].rstrip("/") + "/rest/v1"
+KEY = sys.argv[2]
 HEADERS = {
     "apikey": KEY,
     "Authorization": f"Bearer {KEY}",
@@ -37,18 +41,53 @@ HEADERS = {
     "Prefer": "return=representation"
 }
 
-# Cron -> minutes interval map
+# Cron -> minutes interval map (known patterns + fallback parser)
 INTERVALS = {
+    "*/5 * * * *": 5,
+    "*/10 * * * *": 10,
     "*/15 * * * *": 15,
     "*/30 * * * *": 30,
     "0 * * * *": 60,
+    "0 */2 * * *": 120,
     "0 */3 * * *": 180,
+    "0 */4 * * *": 240,
     "0 */6 * * *": 360,
+    "0 */8 * * *": 480,
     "0 */12 * * *": 720,
-    "0 14 * * *": 1440,
-    "0 9 * * *": 1440,
-    "0 9 * * 1": 10080,
+    "0 0 * * *": 1440,       # daily at midnight
+    "0 9 * * *": 1440,       # daily at 9am
+    "0 14 * * *": 1440,      # daily at 2pm
+    "0 9 * * 1": 10080,      # weekly Monday 9am
+    "0 0 1 * *": 43200,      # monthly 1st
+    "0 0 15 * *": 43200,     # monthly 15th
 }
+
+def parse_cron_interval(cron_expr):
+    """Parse a cron expression into approximate minutes until next run."""
+    if cron_expr in INTERVALS:
+        return INTERVALS[cron_expr]
+    parts = cron_expr.split()
+    if len(parts) != 5:
+        return 360  # default 6 hours
+    minute, hour, dom, month, dow = parts
+    # */N minute patterns
+    if minute.startswith("*/"):
+        try: return int(minute[2:])
+        except: pass
+    # */N hour patterns
+    if hour.startswith("*/"):
+        try: return int(hour[2:]) * 60
+        except: pass
+    # Specific hour patterns (daily)
+    if hour.isdigit() and minute.isdigit() and dom == "*" and dow == "*":
+        return 1440  # daily
+    # Specific dow patterns (weekly)
+    if dow != "*":
+        return 10080  # weekly
+    # Specific dom patterns (monthly)
+    if dom != "*":
+        return 43200  # monthly
+    return 360  # default fallback
 
 def api_get(path, params=""):
     req = urllib.request.Request(f"{URL}/{path}?{params}", headers=HEADERS)
@@ -85,7 +124,7 @@ for task in tasks:
 
     name = task.get("task_name", "unknown")
     cron = task.get("schedule_cron", "0 */6 * * *")
-    interval = INTERVALS.get(cron, 360)
+    interval = parse_cron_interval(cron)
 
     # Check only_if_pending flag
     if config.get("only_if_pending"):

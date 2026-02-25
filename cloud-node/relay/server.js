@@ -24,10 +24,18 @@ const PORT = parseInt(process.env.RELAY_PORT || '3000');
 const AUTH_TOKEN = process.env.RELAY_AUTH_TOKEN || '';
 const WORKSPACE = process.env.WORKSPACE_DIR || join(process.env.HOME || '/home/agent', 'workspace');
 const CLAUDE_MEM = process.env.CLAUDE_MEM_REPO || join(process.env.HOME || '/home/agent', 'claude-mem');
-const SUPABASE_URL = process.env.SUPABASE_URL || 'https://wcdyvukzlxxkgvxomaxr.supabase.co';
+const SUPABASE_URL = process.env.SUPABASE_URL || '';
 const SUPABASE_KEY = process.env.SUPABASE_KEY || '';
 const SESSIONS_DIR = join(WORKSPACE, '.chat-sessions');
 const MAX_CONCURRENT = parseInt(process.env.MAX_CONCURRENT || '3');
+const SESSION_MAX_AGE_DAYS = parseInt(process.env.SESSION_MAX_AGE_DAYS || '30');
+
+// SECURITY: Require auth token — refuse to start without it
+if (!AUTH_TOKEN) {
+  console.error('[SECURITY] RELAY_AUTH_TOKEN is not set — relay would be open to anyone.');
+  console.error('Set RELAY_AUTH_TOKEN in /home/agent/.config/relay.env and restart.');
+  process.exit(1);
+}
 
 mkdirSync(SESSIONS_DIR, { recursive: true });
 mkdirSync(WORKSPACE, { recursive: true });
@@ -35,6 +43,31 @@ mkdirSync(WORKSPACE, { recursive: true });
 // Track active Claude processes
 const activeSessions = new Map();
 let activeProcessCount = 0;
+
+// ── Session cleanup (runs on startup and every 6 hours) ──
+function cleanupOldSessions() {
+  try {
+    const { rmSync } = require('fs');
+    const dirs = readdirSync(SESSIONS_DIR, { withFileTypes: true }).filter(d => d.isDirectory());
+    const cutoff = Date.now() - (SESSION_MAX_AGE_DAYS * 24 * 60 * 60 * 1000);
+    let cleaned = 0;
+    for (const d of dirs) {
+      if (activeSessions.has(d.name)) continue;
+      const metaPath = join(SESSIONS_DIR, d.name, 'meta.json');
+      try {
+        const meta = JSON.parse(readFileSync(metaPath, 'utf8'));
+        const created = new Date(meta.created_at || 0).getTime();
+        if (created < cutoff) {
+          rmSync(join(SESSIONS_DIR, d.name), { recursive: true, force: true });
+          cleaned++;
+        }
+      } catch { /* skip unreadable sessions */ }
+    }
+    if (cleaned > 0) log(`Cleaned up ${cleaned} sessions older than ${SESSION_MAX_AGE_DAYS} days`);
+  } catch { /* non-fatal */ }
+}
+cleanupOldSessions();
+setInterval(cleanupOldSessions, 6 * 60 * 60 * 1000);
 
 // ── HTTP Server (serves chat UI + handles auth) ──
 
@@ -485,7 +518,7 @@ function getStoredSessions() {
 async function logToSupabase(eventType, sessionId, description) {
   if (!SUPABASE_URL || !SUPABASE_KEY) return;
   try {
-    await fetch(`${SUPABASE_URL}/rest/v1/cloud_node_tasks`, {
+    await fetch(`${SUPABASE_URL}/rest/v1/claude_events`, {
       method: 'POST',
       headers: {
         'apikey': SUPABASE_KEY,
@@ -494,10 +527,10 @@ async function logToSupabase(eventType, sessionId, description) {
         'Prefer': 'return=minimal',
       },
       body: JSON.stringify({
-        prompt: `[${eventType}] ${description}`,
-        status: 'completed',
-        created_at: new Date().toISOString(),
-        completed_at: new Date().toISOString(),
+        session_id: sessionId || null,
+        description: `[relay:${eventType}] ${description}`,
+        event_type: eventType === 'session_start' ? 'milestone' : 'action',
+        importance: 'low',
       }),
     });
   } catch { /* non-fatal */ }

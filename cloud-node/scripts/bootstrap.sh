@@ -118,13 +118,23 @@ log "Node.js $(node --version) installed."
 # Step 5: Install Claude Code
 # ──────────────────────────────────────────────
 log "Step 5/9: Installing Claude Code..."
-# Install as agent user
-sudo -u "$AGENT_USER" bash -c '
-    curl -fsSL https://claude.ai/install.sh | bash
-    echo "export PATH=\"\$HOME/.local/bin:\$PATH\"" >> ~/.bashrc
-    echo "export PATH=\"\$HOME/.local/bin:\$PATH\"" >> ~/.profile
-'
-log "Claude Code installed for $AGENT_USER. Auth required on first run: sudo -iu $AGENT_USER claude"
+# Install as agent user (idempotent — skip if already installed)
+if sudo -u "$AGENT_USER" bash -c '[[ -f "$HOME/.local/bin/claude" ]]'; then
+    log "Claude Code already installed, skipping."
+else
+    sudo -u "$AGENT_USER" bash -c '
+        curl -fsSL https://claude.ai/install.sh | bash
+        grep -q "/.local/bin" ~/.bashrc || echo "export PATH=\"\$HOME/.local/bin:\$PATH\"" >> ~/.bashrc
+        grep -q "/.local/bin" ~/.profile || echo "export PATH=\"\$HOME/.local/bin:\$PATH\"" >> ~/.profile
+    '
+    # Verify
+    if sudo -u "$AGENT_USER" bash -c '[[ -f "$HOME/.local/bin/claude" ]]'; then
+        log "Claude Code installed successfully."
+    else
+        err "Claude Code installation FAILED — install manually after bootstrap."
+    fi
+fi
+log "Auth required on first run: sudo -iu $AGENT_USER claude"
 
 # ──────────────────────────────────────────────
 # Step 6: Install code-server
