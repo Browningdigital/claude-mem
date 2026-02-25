@@ -166,9 +166,17 @@ export async function generateContext(
       useColors
     );
 
-    // Enrich with content pipeline digest (non-blocking, failure-tolerant)
+    // Enrich with persistent memory context (non-blocking, failure-tolerant)
     try {
       const contentService = new ContentIngestService();
+
+      // Load core memories from Browning Memory (survives compaction)
+      const memoryContext = await contentService.generateMemoryContext();
+      if (memoryContext) {
+        context += '\n\n' + memoryContext;
+      }
+
+      // Load content pipeline digest
       const digest = await contentService.generateContentDigest();
       if (digest && !digest.includes('Unable to load')) {
         context += '\n\n' + digest;

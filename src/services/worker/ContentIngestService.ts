@@ -349,6 +349,51 @@ export class ContentIngestService {
   // Formatted output for MCP/context injection
   // ============================================================================
 
+  // ============================================================================
+  // Browning Memory — claude_memories (cross-session persistence)
+  // ============================================================================
+
+  /**
+   * Load high-importance memories from Browning Memory for context injection.
+   * These persist across sessions and survive context compaction.
+   */
+  async getCoreMemories(limit: number = 10): Promise<{ topic: string; content: string; memory_type: string; importance: number; tags: string[] }[]> {
+    const cacheKey = `core_memories_${limit}`;
+    return this.getCached(cacheKey, CACHE_TTL_FEEDS, async () => {
+      return this.querySupabase<{ topic: string; content: string; memory_type: string; importance: number; tags: string[] }>(
+        `SELECT topic, content, memory_type, importance, tags
+         FROM claude_memories
+         WHERE is_archived = false
+         ORDER BY importance DESC, created_at DESC
+         LIMIT ${limit}`
+      );
+    });
+  }
+
+  /**
+   * Generate a memory context block for injection into sessions.
+   * This gives every new session immediate access to critical state.
+   */
+  async generateMemoryContext(): Promise<string> {
+    try {
+      const memories = await this.getCoreMemories(6);
+      if (memories.length === 0) return '';
+
+      const lines: string[] = [];
+      lines.push('# Browning Memory — Persistent Context');
+      lines.push('');
+      for (const mem of memories) {
+        lines.push(`## ${mem.topic} [${mem.memory_type}]`);
+        lines.push(mem.content);
+        lines.push('');
+      }
+      return lines.join('\n');
+    } catch (error) {
+      logger.debug('CONTENT', 'Memory context loading skipped', {}, error as Error);
+      return '';
+    }
+  }
+
   /**
    * Generate a formatted content feed digest for context injection.
    * This is what gets injected into Claude sessions alongside memory observations.
