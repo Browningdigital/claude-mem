@@ -20,6 +20,7 @@
 import express, { Request, Response } from 'express';
 import { BaseRouteHandler } from '../BaseRouteHandler.js';
 import { ContentIngestService } from '../../ContentIngestService.js';
+import { extractSocialContent, detectPlatform } from '../../SocialMediaExtractor.js';
 import { logger } from '../../../../utils/logger.js';
 
 const CONTENT_INGEST_HEALTH_URL = 'https://content-ingest.devin-b58.workers.dev/health';
@@ -192,7 +193,11 @@ export class ContentRoutes extends BaseRouteHandler {
    * POST /api/content/share — Share a URL from iOS Share Sheet / mobile
    * Body: { url: string, title?: string, source?: string }
    *
-   * Proxies to the content-extractor worker: extract → store → return link
+   * Flow:
+   * 1. Detect if URL is a social media platform (Instagram, Facebook, Twitter, etc.)
+   * 2. If social: use built-in SocialMediaExtractor (oEmbed, embed pages, alt frontends)
+   * 3. If not social or social extraction fails: fall back to Jina via content-extractor worker
+   * 4. Store extracted content via content-extractor /api/upload-url
    */
   private handleShare = this.wrapHandler(async (req: Request, res: Response): Promise<void> => {
     const { url, title, source } = req.body;
@@ -202,36 +207,66 @@ export class ContentRoutes extends BaseRouteHandler {
       return;
     }
 
-    logger.info('CONTENT', 'Share received', { url, title, source });
+    const platform = detectPlatform(url);
+    logger.info('CONTENT', 'Share received', { url, title, source, platform: platform || 'non-social' });
 
     try {
-      // Step 1: Extract content from URL
-      const extractRes = await fetch(
-        `${CONTENT_EXTRACTOR_BASE}/api/extract?url=${encodeURIComponent(url)}`
-      );
+      let extractedTitle: string = title || url;
+      let extractedContent: string = '';
+      let extractedContentType: string = 'article';
+      let extractedMetadata: Record<string, any> = {};
 
-      if (!extractRes.ok) {
-        const errorText = await extractRes.text();
-        res.status(extractRes.status).json({
-          success: false,
-          error: `Extraction failed: ${errorText}`
-        });
-        return;
+      // Step 1: Try social media extraction first (if applicable)
+      if (platform) {
+        const socialResult = await extractSocialContent(url);
+        if (socialResult) {
+          extractedTitle = title || socialResult.title;
+          extractedContent = socialResult.content;
+          extractedContentType = socialResult.content_type;
+          extractedMetadata = socialResult.metadata;
+          logger.info('CONTENT', `Social extraction succeeded for ${platform}`, {
+            method: socialResult.metadata.extraction_method,
+            content_length: socialResult.content.length,
+          });
+        } else {
+          logger.warn('CONTENT', `Social extraction failed for ${platform}, falling back to Jina`, { url });
+        }
       }
 
-      const extracted = await extractRes.json() as Record<string, any>;
+      // Step 2: Fall back to Jina/content-extractor if not social or social extraction failed
+      if (!extractedContent) {
+        const extractRes = await fetch(
+          `${CONTENT_EXTRACTOR_BASE}/api/extract?url=${encodeURIComponent(url)}`
+        );
 
-      // Step 2: Store the extracted content
+        if (!extractRes.ok) {
+          const errorText = await extractRes.text();
+          res.status(extractRes.status).json({
+            success: false,
+            error: `Extraction failed: ${errorText}`,
+            platform: platform || undefined,
+          });
+          return;
+        }
+
+        const extracted = await extractRes.json() as Record<string, any>;
+        extractedTitle = title || extracted.title || url;
+        extractedContent = extracted.content || '';
+        extractedContentType = extracted.content_type || 'article';
+        extractedMetadata = extracted.metadata || {};
+      }
+
+      // Step 3: Store the extracted content
       const storeRes = await fetch(`${CONTENT_EXTRACTOR_BASE}/api/upload-url`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           url,
-          title: title || extracted.title || url,
-          content: extracted.content || '',
-          content_type: extracted.content_type || 'article',
+          title: extractedTitle,
+          content: extractedContent,
+          content_type: extractedContentType,
           metadata: {
-            ...extracted.metadata,
+            ...extractedMetadata,
             shared_from: source || 'ios-share-sheet',
             shared_at: new Date().toISOString()
           }
@@ -252,13 +287,15 @@ export class ContentRoutes extends BaseRouteHandler {
       res.json({
         success: true,
         id: stored.id,
-        title: stored.title || extracted.title || url,
+        title: stored.title || extractedTitle,
         link: stored.link,
-        content_type: stored.content_type || extracted.content_type,
-        content_length: stored.content_length
+        content_type: stored.content_type || extractedContentType,
+        content_length: stored.content_length,
+        platform: platform || undefined,
+        extraction_method: extractedMetadata.extraction_method || 'jina',
       });
     } catch (error) {
-      logger.error('CONTENT', 'Share processing failed', { url }, error as Error);
+      logger.error('CONTENT', 'Share processing failed', { url, platform: platform || 'non-social' }, error as Error);
       res.status(500).json({
         success: false,
         error: error instanceof Error ? error.message : String(error)
