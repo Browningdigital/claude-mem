@@ -233,6 +233,83 @@ NEVER fetch full details without filtering first. 10x token savings.`,
     handler: async (args: any) => {
       return await callWorkerAPIPost('/api/observations/batch', args);
     }
+  },
+  {
+    name: 'content_feed',
+    description: 'Browse the Browning Digital content pipeline: RSS feeds, golden nuggets, content queue, and pipeline stats. Actions: "summary" (overview), "nuggets" (golden nuggets), "queue" (scheduled posts), "search" (search content), "scrapers" (feed configs), "health" (ingest worker status)',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        action: {
+          type: 'string',
+          description: 'Action to perform: summary, nuggets, queue, search, scrapers, health, raw, library, digest',
+          enum: ['summary', 'nuggets', 'queue', 'search', 'scrapers', 'health', 'raw', 'library', 'digest']
+        },
+        query: {
+          type: 'string',
+          description: 'Search query (only for action=search)'
+        },
+        limit: {
+          type: 'number',
+          description: 'Number of results to return (default: 10)'
+        },
+        stage: {
+          type: 'string',
+          description: 'Pipeline stage filter for nuggets (research, backlog)'
+        },
+        status: {
+          type: 'string',
+          description: 'Status filter for queue items (queued, posted, failed)'
+        }
+      },
+      required: ['action']
+    },
+    handler: async (args: any) => {
+      const { action, query, limit, stage, status } = args;
+      const params: Record<string, any> = {};
+      if (limit) params.limit = limit;
+      if (stage) params.stage = stage;
+      if (status) params.status = status;
+      if (query) params.query = query;
+
+      const endpointMap: Record<string, string> = {
+        'summary': '/api/content/feed',
+        'nuggets': '/api/content/nuggets',
+        'queue': '/api/content/queue',
+        'search': '/api/content/search',
+        'scrapers': '/api/content/scrapers',
+        'health': '/api/content/health',
+        'raw': '/api/content/raw',
+        'library': '/api/content/library',
+        'digest': '/api/content/digest'
+      };
+
+      const endpoint = endpointMap[action];
+      if (!endpoint) {
+        return {
+          content: [{ type: 'text' as const, text: `Unknown action: ${action}. Valid: ${Object.keys(endpointMap).join(', ')}` }],
+          isError: true
+        };
+      }
+
+      // Digest returns plain text, everything else returns JSON
+      if (action === 'digest') {
+        try {
+          const url = `${WORKER_BASE_URL}${endpoint}`;
+          const response = await fetch(url);
+          if (!response.ok) throw new Error(`HTTP ${response.status}`);
+          const text = await response.text();
+          return { content: [{ type: 'text' as const, text }] };
+        } catch (error) {
+          return {
+            content: [{ type: 'text' as const, text: `Error: ${error instanceof Error ? error.message : String(error)}` }],
+            isError: true
+          };
+        }
+      }
+
+      return await callWorkerAPI(endpoint, params);
+    }
   }
 ];
 
