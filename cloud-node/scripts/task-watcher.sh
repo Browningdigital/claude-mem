@@ -37,7 +37,7 @@ mkdir -p "$WORKSPACE_DIR"
 
 supabase_query() {
     local filter="$1"
-    curl -s "${SUPABASE_URL}/rest/v1/cloud_node_tasks?${filter}" \
+    curl -s --max-time 30 "${SUPABASE_URL}/rest/v1/cloud_node_tasks?${filter}" \
         -H "apikey: ${SUPABASE_KEY}" \
         -H "Authorization: Bearer ${SUPABASE_KEY}" \
         -H "Content-Type: application/json"
@@ -46,7 +46,7 @@ supabase_query() {
 supabase_update() {
     local task_id="$1"
     local data="$2"
-    curl -s -X PATCH "${SUPABASE_URL}/rest/v1/cloud_node_tasks?id=eq.${task_id}" \
+    curl -s --max-time 30 -X PATCH "${SUPABASE_URL}/rest/v1/cloud_node_tasks?id=eq.${task_id}" \
         -H "apikey: ${SUPABASE_KEY}" \
         -H "Authorization: Bearer ${SUPABASE_KEY}" \
         -H "Content-Type: application/json" \
@@ -326,8 +326,6 @@ execute_task() {
     fi
 
     log "DONE task ${task_id}: status=${status} (exit_code=${exit_code})"
-
-    RUNNING_TASKS=$((RUNNING_TASKS - 1))
 }
 
 # ── Main loop ──
@@ -343,6 +341,9 @@ if [[ -d "${CLAUDE_MEM_REPO}/.git" ]]; then
 fi
 
 while true; do
+    # Count actual running background jobs (not a shared variable — immune to subshell race)
+    RUNNING_TASKS=$(jobs -rp | wc -l)
+
     # Poll for queued tasks
     if [[ $RUNNING_TASKS -lt $MAX_CONCURRENT ]]; then
         TASKS=$(supabase_query "status=eq.queued&order=created_at.asc&limit=$((MAX_CONCURRENT - RUNNING_TASKS))")
@@ -352,7 +353,6 @@ while true; do
 
             for i in $(seq 0 $((TASK_COUNT - 1))); do
                 TASK=$(echo "$TASKS" | jq ".[$i]")
-                RUNNING_TASKS=$((RUNNING_TASKS + 1))
                 execute_task "$TASK" &
             done
         fi
