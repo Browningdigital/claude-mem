@@ -1,0 +1,31 @@
+name = "oci-provisioner"
+main = "oci-provisioner.ts"
+compatibility_date = "2025-02-01"
+
+[triggers]
+crons = ["* * * * *"]
+
+# Non-sensitive config (OCI region/AD names are public infrastructure info)
+[vars]
+OCI_REGION = "us-chicago-1"
+OCI_ADS = "NvCA:US-CHICAGO-1-AD-1,NvCA:US-CHICAGO-1-AD-2,NvCA:US-CHICAGO-1-AD-3"
+
+# Secrets — set before deploying:
+#
+#   cd cloud-node/worker
+#
+#   # OCI Auth
+#   wrangler secret put OCI_PRIVATE_KEY -c wrangler-oci.toml
+#   wrangler secret put OCI_TENANCY_OCID -c wrangler-oci.toml
+#   wrangler secret put OCI_USER_OCID -c wrangler-oci.toml
+#   wrangler secret put OCI_FINGERPRINT -c wrangler-oci.toml
+#
+#   # OCI Instance Config
+#   wrangler secret put OCI_COMPARTMENT_ID -c wrangler-oci.toml
+#   wrangler secret put OCI_SUBNET_ID -c wrangler-oci.toml
+#   wrangler secret put OCI_IMAGE_ID -c wrangler-oci.toml
+#   wrangler secret put OCI_SSH_PUBLIC_KEY -c wrangler-oci.toml
+#
+#   # Supabase (for logging attempts)
+#   wrangler secret put SUPABASE_URL -c wrangler-oci.toml
+#   wrangler secret put SUPABASE_KEY -c wrangler-oci.toml
