@@ -64,12 +64,12 @@
     }
     .install-btn:active { transform: scale(0.97); }
     .install-btn svg { width: 22px; height: 22px; }
-    .steps {
+    .setup-section {
       width: 100%;
       max-width: 480px;
       padding: 0 24px 40px;
     }
-    .steps h2 {
+    .setup-section h2 {
       font-size: 20px;
       font-weight: 600;
       margin-bottom: 20px;
@@ -78,7 +78,7 @@
     .step {
       display: flex;
       gap: 16px;
-      margin-bottom: 20px;
+      margin-bottom: 24px;
     }
     .step-num {
       flex-shrink: 0;
@@ -97,13 +97,35 @@
     .step-content h3 {
       font-size: 15px;
       font-weight: 600;
-      margin-bottom: 4px;
+      margin-bottom: 6px;
     }
     .step-content p {
       font-size: 14px;
       color: rgba(255,255,255,0.5);
+      line-height: 1.5;
+    }
+    .url-box {
+      background: rgba(255,255,255,0.04);
+      border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 10px;
+      padding: 12px 16px;
+      margin-top: 10px;
+      position: relative;
+      cursor: pointer;
+    }
+    .url-box code {
+      font-size: 12px;
+      color: #a5b4fc;
+      word-break: break-all;
       line-height: 1.4;
     }
+    .url-box .copy-hint {
+      font-size: 11px;
+      color: rgba(255,255,255,0.3);
+      margin-top: 6px;
+      display: block;
+    }
+    .url-box.copied .copy-hint { color: #4ade80; }
     .features {
       width: 100%;
       max-width: 480px;
@@ -135,35 +157,8 @@
       text-align: center;
       border-top: 1px solid rgba(255,255,255,0.06);
     }
-    .footer p {
-      font-size: 12px;
-      color: rgba(255,255,255,0.3);
-    }
+    .footer p { font-size: 12px; color: rgba(255,255,255,0.3); }
     .footer a { color: #818cf8; text-decoration: none; }
-    .manual-section {
-      width: 100%;
-      max-width: 480px;
-      padding: 0 24px 40px;
-    }
-    .manual-section h2 {
-      font-size: 18px;
-      font-weight: 600;
-      margin-bottom: 12px;
-      color: rgba(255,255,255,0.7);
-    }
-    .manual-section p {
-      font-size: 14px;
-      color: rgba(255,255,255,0.4);
-      line-height: 1.5;
-      margin-bottom: 12px;
-    }
-    code {
-      background: rgba(255,255,255,0.06);
-      padding: 2px 6px;
-      border-radius: 4px;
-      font-size: 13px;
-      color: #a5b4fc;
-    }
     .badge {
       display: inline-block;
       background: rgba(34, 197, 94, 0.15);
@@ -174,61 +169,87 @@
       border-radius: 6px;
       margin-bottom: 16px;
     }
+    .divider {
+      width: 100%;
+      max-width: 480px;
+      height: 1px;
+      background: rgba(255,255,255,0.06);
+      margin: 0 24px 40px;
+    }
   </style>
 </head>
 <body>
   <div class="hero">
     <div class="icon">&#9889;</div>
-    <div class="badge">FREE</div>
+    <div class="badge">FREE TOOL</div>
     <h1>Save to Browning</h1>
     <p class="subtitle">
       Send any URL from your iPhone directly to the Browning Digital content pipeline.
-      Articles, videos, tweets, PDFs — all extracted, processed, and stored automatically.
+      Articles, videos, tweets, PDFs &mdash; all extracted, processed, and stored automatically.
     </p>
-    <a href="https://www.icloud.com/shortcuts/save-to-browning" class="install-btn" id="installBtn">
+    <a href="#setup" class="install-btn" id="installBtn">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
         <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
         <polyline points="7 10 12 15 17 10"/>
         <line x1="12" y1="15" x2="12" y2="3"/>
       </svg>
-      Add to Shortcuts
+      Set Up Shortcut
     </a>
   </div>
 
-  <div class="steps">
-    <h2>How It Works</h2>
+  <div class="setup-section" id="setup">
+    <h2>Quick Setup (1 minute)</h2>
+
     <div class="step">
       <div class="step-num">1</div>
       <div class="step-content">
-        <h3>Share anything</h3>
-        <p>Tap the Share button in any app — Safari, YouTube, Twitter, Reddit, anywhere.</p>
+        <h3>Open the Shortcuts app</h3>
+        <p>Tap the <strong>+</strong> button to create a new shortcut.</p>
       </div>
     </div>
+
     <div class="step">
       <div class="step-num">2</div>
       <div class="step-content">
-        <h3>Select "Save to Browning"</h3>
-        <p>Choose the shortcut from your Share Sheet. It runs instantly.</p>
+        <h3>Name it "Save to Browning"</h3>
+        <p>Tap the name at the top. Then tap <strong>&#9432;</strong> &rarr; <strong>Show in Share Sheet</strong> and set it to receive <strong>URLs</strong>.</p>
       </div>
     </div>
+
     <div class="step">
       <div class="step-num">3</div>
       <div class="step-content">
-        <h3>Content auto-extracted</h3>
-        <p>Full text, metadata, and AI analysis — stored in your pipeline within seconds.</p>
+        <h3>Add "Get Contents of URL"</h3>
+        <p>Search for <strong>"Get Contents of URL"</strong> and add it. Set the URL to:</p>
+        <div class="url-box" id="urlBox" onclick="copyUrl()">
+          <code id="apiUrl">https://content-extractor.devin-b58.workers.dev/api/share?url=</code>
+          <span class="copy-hint" id="copyHint">Tap to copy</span>
+        </div>
+        <p style="margin-top: 8px;">Then append <strong>Shortcut Input</strong> to the end of the URL (tap the URL field, insert the blue "Shortcut Input" variable after <code>=</code>).</p>
       </div>
     </div>
+
     <div class="step">
       <div class="step-num">4</div>
       <div class="step-content">
-        <h3>Access anywhere</h3>
-        <p>Via MCP tools, content API, or the Drop Zone web UI.</p>
+        <h3>Add a notification</h3>
+        <p>Add <strong>"Show Notification"</strong> and set it to: <code>Saved to Browning!</code></p>
+      </div>
+    </div>
+
+    <div class="step">
+      <div class="step-num">5</div>
+      <div class="step-content">
+        <h3>Done! Test it</h3>
+        <p>Open Safari, tap <strong>Share</strong>, select <strong>"Save to Browning"</strong>. The page content is extracted and stored in your pipeline instantly.</p>
       </div>
     </div>
   </div>
 
+  <div class="divider"></div>
+
   <div class="features">
-    <h2>Supported Content</h2>
+    <h2>What It Captures</h2>
     <div class="feature-grid">
       <div class="feature">
         <div class="feature-icon">&#128196;</div>
@@ -243,7 +264,7 @@
       <div class="feature">
         <div class="feature-icon">&#128038;</div>
         <h3>Twitter / X</h3>
-        <p>Tweet text and metadata</p>
+        <p>Tweet text and thread extraction</p>
       </div>
       <div class="feature">
         <div class="feature-icon">&#128247;</div>
@@ -263,7 +284,7 @@
       <div class="feature">
         <div class="feature-icon">&#128172;</div>
         <h3>Reddit & LinkedIn</h3>
-        <p>Post content extraction</p>
+        <p>Post and comment extraction</p>
       </div>
       <div class="feature">
         <div class="feature-icon">&#127760;</div>
@@ -271,20 +292,6 @@
         <p>Universal content extraction</p>
       </div>
     </div>
-  </div>
-
-  <div class="manual-section">
-    <h2>Manual Setup (if link above doesn't work)</h2>
-    <p>
-      Open the <strong>Shortcuts</strong> app on your iPhone. Create a new shortcut named
-      <strong>"Save to Browning"</strong>. Set it to <strong>Show in Share Sheet</strong>
-      and receive <strong>URLs</strong>.
-    </p>
-    <p>Add a single action: <strong>Get Contents of URL</strong> with:</p>
-    <p>
-      <code>https://content-extractor.devin-b58.workers.dev/api/share?url=[Share Sheet Input]</code>
-    </p>
-    <p>Then add <strong>Show Notification</strong>: "Saved to Browning!"</p>
   </div>
 
   <div class="footer">
@@ -296,13 +303,18 @@
   </div>
 
   <script>
-    // Detect if on iOS and update install button behavior
-    const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
-    const btn = document.getElementById('installBtn');
-    if (!isIOS) {
-      btn.textContent = 'View Setup Instructions';
-      btn.href = '#manual';
-      document.querySelector('.manual-section').id = 'manual';
+    function copyUrl() {
+      const url = document.getElementById('apiUrl').textContent;
+      navigator.clipboard.writeText(url).then(() => {
+        const box = document.getElementById('urlBox');
+        const hint = document.getElementById('copyHint');
+        box.classList.add('copied');
+        hint.textContent = 'Copied!';
+        setTimeout(() => {
+          box.classList.remove('copied');
+          hint.textContent = 'Tap to copy';
+        }, 2000);
+      });
     }
   </script>
 </body>
