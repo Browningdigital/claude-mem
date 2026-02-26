@@ -8,8 +8,10 @@
 ┌──────────────────────────────────────────────────────────────────┐
 │  LAYER 1: ALWAYS LOADED (every message, every session)           │
 │                                                                   │
-│  Global CLAUDE.md (~40 lines, ~500 tokens)                       │
-│  └─ Identity, credentials procedure, behavioral rules, stack     │
+│  Global CLAUDE.md (197 lines, ~1,500 tokens)                     │
+│  └─ Identity, environment, startup sequence, credentials         │
+│  └─ MCP fallback, session logging, behavioral commandments       │
+│  └─ Tech stack defaults, design philosophy, active projects      │
 │                                                                   │
 │  claude-mem context injection (SessionStart hook)                 │
 │  └─ Recent observations table (IDs, titles, types, token costs)  │
@@ -17,128 +19,123 @@
 │  └─ Token economics (savings report)                             │
 │  └─ Controlled by: ~/.claude-mem/settings.json                   │
 ├──────────────────────────────────────────────────────────────────┤
-│  LAYER 2: PROJECT-SPECIFIC (loaded per-repo via .claude/CLAUDE.md│
+│  LAYER 2: PROJECT-SPECIFIC (loaded per-repo .claude/CLAUDE.md    │
 │  or Claude.ai project instructions)                              │
 │                                                                   │
-│  INFO-PRODUCT-SLIM.md — info product project context (74 lines)  │
-│  STOREFRONT-DESIGN.md — conversion-first design rules (50 lines) │
+│  STOREFRONT-DESIGN.md — conversion-first design reference        │
 │  cloud-node/agent/CLAUDE.md — autonomous agent identity          │
-│  [Add more per-project files as needed]                          │
+│  [Per-project files as needed]                                   │
 ├──────────────────────────────────────────────────────────────────┤
 │  LAYER 3: ON-DEMAND (fetched only when task requires it)         │
 │                                                                   │
-│  MCP search/timeline/get_observations — deep memory lookup       │
-│  Browning Memory MCP — cross-project state, handoffs             │
-│  Credentials — API keys from claude_system_state                 │
-│  INFO-PRODUCT-PROJECT.md — full 447-line bible (reference only)  │
+│  claude-mem MCP: search/timeline/get_observations                │
+│  Browning Memory MCP: credentials, handoffs, cross-project state │
+│  Supabase direct fallback when MCP is down                       │
 └──────────────────────────────────────────────────────────────────┘
 ```
 
-## HOW EACH LAYER LOADS
+## TOKEN BURN PER MESSAGE (defaults)
 
-### Layer 1 — Automatic (zero user action)
-- **Global CLAUDE.md**: Loaded by Claude Code from `~/.claude/CLAUDE.md` or repo root
-- **claude-mem hooks**: Fire automatically via `plugin/hooks/hooks.json`:
-  - `SessionStart` → starts worker + injects context
-  - `UserPromptSubmit` → session-init
-  - `PostToolUse` → captures observations
-  - `Stop` → generates session summary
-
-### Layer 2 — Per-Project (set once per project)
-**For Claude Code (CLI):**
-- Place project-specific CLAUDE.md in the repo's `.claude/CLAUDE.md`
-- claude-mem's `.claude/CLAUDE.md` already auto-generates recent activity
-
-**For Claude.ai (web projects):**
-- Paste the slim instructions file into "Project Instructions"
-- Upload the full bible as a "Project Knowledge" file (searchable, not in every message)
-- Add MCP connectors as needed
-
-### Layer 3 — On-Demand (fetched by Claude when needed)
-- claude-mem MCP tools: `search(query)` → `timeline(anchor=ID)` → `get_observations(ids=[...])`
-- Browning Memory MCP: `get_credentials()`, `read_handoff()`, `load_full_context()`
-- Supabase direct fallback for credentials when MCP is down
-
-## TOKEN BUDGET COMPARISON
-
-| Component | v1 (old) | v2 (new) | Savings |
-|-----------|----------|----------|---------|
-| Global CLAUDE.md | ~1,500 tok/msg | ~500 tok/msg | 67% |
-| Browning Memory startup | ~3,000 tok/session | 0 (on-demand) | 100% |
-| Design philosophy | ~800 tok/msg (always) | 0 (per-project only) | 100% |
-| Active projects list | ~200 tok/msg | 0 (per-project only) | 100% |
-| claude-mem context | ~2,000-5,000 tok | same (tunable via settings) | — |
-| **Per-message overhead** | **~7,000-10,000** | **~2,500-5,500** | **~50%** |
+| Source | Tokens | Lever |
+|--------|--------|-------|
+| Global CLAUDE.md | ~1,500 | Fixed (Claude Code loads it) |
+| claude-mem header (legend, column key, context index) | ~250 | **CLAUDE_MEM_CONTEXT_COMPACT** |
+| Observation index rows (50 × ~50 tok) | ~2,500 | **CLAUDE_MEM_CONTEXT_OBSERVATIONS** |
+| Full observation narratives (5 × ~500-1000 tok) | ~2,500-5,000 | **CLAUDE_MEM_CONTEXT_FULL_COUNT** |
+| Session summaries (10 × ~200 tok) | ~2,000 | **CLAUDE_MEM_CONTEXT_SESSION_COUNT** |
+| Last summary + footer | ~250 | SHOW_LAST_SUMMARY, economics toggles |
+| **TOTAL (defaults)** | **~9,000-11,500** | |
 
 ## SETTINGS REFERENCE (~/.claude-mem/settings.json)
 
-These control how much context the SessionStart hook injects:
+### Display Counts (biggest token impact)
 
 | Setting | Default | Purpose | Token Impact |
 |---------|---------|---------|--------------|
-| CLAUDE_MEM_CONTEXT_OBSERVATIONS | 50 | Max observations in context | ~50-100 tok each |
+| CLAUDE_MEM_CONTEXT_OBSERVATIONS | 50 | Max observations in context | ~50 tok/row |
 | CLAUDE_MEM_CONTEXT_FULL_COUNT | 5 | How many show full narrative | ~500-1000 tok each |
 | CLAUDE_MEM_CONTEXT_SESSION_COUNT | 10 | Session summaries to show | ~200 tok each |
+| CLAUDE_MEM_CONTEXT_COMPACT | false | **Strip column key + context index boilerplate** | **~250 tok saved** |
+
+### Token Display Toggles
+
+| Setting | Default | Purpose | Token Impact |
+|---------|---------|---------|--------------|
 | CLAUDE_MEM_CONTEXT_SHOW_READ_TOKENS | true | Show read cost column | ~5 tok/row |
 | CLAUDE_MEM_CONTEXT_SHOW_WORK_TOKENS | true | Show work cost column | ~5 tok/row |
 | CLAUDE_MEM_CONTEXT_SHOW_SAVINGS_AMOUNT | true | Show savings line | ~20 tok |
 | CLAUDE_MEM_CONTEXT_SHOW_SAVINGS_PERCENT | true | Show savings % | ~10 tok |
+
+### Feature Toggles
+
+| Setting | Default | Purpose | Token Impact |
+|---------|---------|---------|--------------|
 | CLAUDE_MEM_CONTEXT_SHOW_LAST_SUMMARY | true | Include most recent session summary | ~200 tok |
 | CLAUDE_MEM_CONTEXT_SHOW_LAST_MESSAGE | false | Include last assistant message | ~500+ tok |
 | CLAUDE_MEM_CONTEXT_FULL_FIELD | narrative | What field to expand (narrative or facts) | varies |
 | CLAUDE_MEM_CONTEXT_OBSERVATION_TYPES | all | Filter by type | reduces rows |
 | CLAUDE_MEM_CONTEXT_OBSERVATION_CONCEPTS | all | Filter by concept | reduces rows |
 
-**To reduce token burn further**, tune these in `~/.claude-mem/settings.json`:
+## RECOMMENDED PROFILES
+
+### Aggressive Token Saver (~4,500-6,500 tok total)
+For heavy building sessions where you need max throughput:
 ```json
 {
   "CLAUDE_MEM_CONTEXT_OBSERVATIONS": "25",
-  "CLAUDE_MEM_CONTEXT_FULL_COUNT": "3",
+  "CLAUDE_MEM_CONTEXT_FULL_COUNT": "2",
   "CLAUDE_MEM_CONTEXT_SESSION_COUNT": "5",
+  "CLAUDE_MEM_CONTEXT_COMPACT": "true",
   "CLAUDE_MEM_CONTEXT_SHOW_SAVINGS_AMOUNT": "false",
   "CLAUDE_MEM_CONTEXT_SHOW_SAVINGS_PERCENT": "false"
 }
 ```
 
-## CONNECTOR SETUP — CLAUDE.AI WEB PROJECTS
+### Balanced (defaults — ~9,000-11,500 tok total)
+Full context for research-heavy sessions:
+```json
+{
+  "CLAUDE_MEM_CONTEXT_OBSERVATIONS": "50",
+  "CLAUDE_MEM_CONTEXT_FULL_COUNT": "5",
+  "CLAUDE_MEM_CONTEXT_SESSION_COUNT": "10",
+  "CLAUDE_MEM_CONTEXT_COMPACT": "false"
+}
+```
 
-### Info Product Project
-- **Instructions**: Paste `INFO-PRODUCT-SLIM.md` (74 lines)
-- **Knowledge**: Upload `INFO-PRODUCT-PROJECT.md` (full bible)
-- **Connectors**: claude-mem MCP (search/timeline), Browning Memory MCP (if needed)
+## HOW IT WORKS
 
-### Storefront / Sales Page Project
-- **Instructions**: Paste `STOREFRONT-DESIGN.md` + relevant product context
-- **Knowledge**: Upload product specs, brand guidelines
-- **Connectors**: claude-mem MCP
+### SessionStart Hook Sequence
+1. `smart-install.js` — Install dependencies
+2. `worker-service.cjs start` — Boot worker daemon
+3. `worker-service.cjs hook claude-code context` — Generate + inject context
+4. `worker-service.cjs hook claude-code user-message` — Attach user-message handler
 
-### General Coding Project
-- **Instructions**: None extra — Global CLAUDE.md + claude-mem hooks handle it
-- **Knowledge**: None
-- **Connectors**: claude-mem MCP
+### Context Generation Flow
+```
+hook claude-code context
+  → context handler (src/cli/handlers/context.ts)
+  → GET /api/context/inject?projects=...
+  → ContextBuilder.generateContext()
+    → ContextConfigLoader.loadContextConfig()  ← reads ~/.claude-mem/settings.json
+    → ObservationCompiler.queryObservations()   ← filtered by type/concept settings
+    → HeaderRenderer.renderHeader()             ← compact mode skips boilerplate
+    → TimelineRenderer.renderTimeline()
+    → SummaryRenderer.renderSummaryFields()
+    → FooterRenderer.renderFooter()
+  → output injected into session as additionalContext
+```
 
-### Autonomous Agent (Cloud Node)
-- **Instructions**: `cloud-node/agent/CLAUDE.md` (already 11.6KB — has its own identity)
-- **Knowledge**: Product pipeline docs
-- **Connectors**: Browning Memory MCP (for handoffs + cross-session state)
-
-## FILE INVENTORY
-
-| File | Lines | Where to Use | Purpose |
-|------|-------|--------------|---------|
-| `CLAUDE.md` (root) | ~40 | Global (~/.claude/) | Identity + credentials + rules |
-| `INFO-PRODUCT-SLIM.md` | 74 | Claude.ai project instructions | Info product project context |
-| `INFO-PRODUCT-PROJECT.md` | 447 | Claude.ai project knowledge | Full operational bible |
-| `STOREFRONT-DESIGN.md` | 50 | Claude.ai project instructions | Conversion-first design rules |
-| `CONTEXT-PROTOCOL.md` | this file | Reference only | Architecture documentation |
-| `cloud-node/agent/CLAUDE.md` | ~300 | Agent project instructions | Autonomous agent identity |
-| `browning-session-init.md` | 62 | Paste manually (no-repo/mobile) | Emergency bootstrap when nothing loads |
+### Data Flow
+- All data stays in SQLite (`~/.claude-mem/claude-mem.db`)
+- Settings control what gets LOADED, never what gets STORED
+- MCP tools provide on-demand deep access to anything not in the context window
+- Nothing is deleted — the delivery layer decides what's relevant per session
 
 ## PRINCIPLES
 
-1. **Load what you need, when you need it.** No startup ceremonies.
-2. **Global file = identity + credentials + rules.** Everything else is per-project.
-3. **claude-mem handles local context automatically.** Don't duplicate its work.
-4. **Layer 3 is the deep bench.** Full details, credentials, cross-project state — fetch on demand.
-5. **Measure token spend.** claude-mem's economics display shows exactly what context costs.
+1. **All data stays.** Settings control delivery, not storage.
+2. **Measure what you load.** Token economics show exactly what context costs.
+3. **Tune for the task.** Aggressive saver for building, balanced for research.
+4. **Compact mode strips what Claude already knows.** Column key and context index instructions are boilerplate after the first session.
+5. **Layer 3 is the deep bench.** Full details available on-demand via MCP tools.
 6. **This protocol self-governs.** Update it when the architecture changes.

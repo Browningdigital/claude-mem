@@ -27,25 +27,29 @@ export function renderHeader(
     output.push(...Markdown.renderMarkdownHeader(project));
   }
 
-  // Legend
+  // Legend (always shown — lightweight type reference)
   if (useColors) {
     output.push(...Color.renderColorLegend());
   } else {
     output.push(...Markdown.renderMarkdownLegend());
   }
 
-  // Column key
-  if (useColors) {
-    output.push(...Color.renderColorColumnKey());
-  } else {
-    output.push(...Markdown.renderMarkdownColumnKey());
-  }
+  // Column key + Context index instructions: skip in compact mode
+  // Claude already knows what Read/Work columns mean — no need to re-explain every message
+  if (!config.compact) {
+    // Column key
+    if (useColors) {
+      output.push(...Color.renderColorColumnKey());
+    } else {
+      output.push(...Markdown.renderMarkdownColumnKey());
+    }
 
-  // Context index instructions
-  if (useColors) {
-    output.push(...Color.renderColorContextIndex());
-  } else {
-    output.push(...Markdown.renderMarkdownContextIndex());
+    // Context index instructions
+    if (useColors) {
+      output.push(...Color.renderColorContextIndex());
+    } else {
+      output.push(...Markdown.renderMarkdownContextIndex());
+    }
   }
 
   // Context economics

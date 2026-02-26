@@ -39,6 +39,10 @@ export interface ContextConfig {
   fullObservationField: 'narrative' | 'facts';
   showLastSummary: boolean;
   showLastMessage: boolean;
+
+  // Compact mode: strips instructional boilerplate (column key, context index guide)
+  // Claude already knows what these mean — no need to re-explain every message
+  compact: boolean;
 }
 
 /**
