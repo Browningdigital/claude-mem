@@ -255,20 +255,31 @@
         <div class="step-num">2</div>
         <div class="step-content">
           <h3>Name it and enable sharing</h3>
-          <p>Tap the name at the top, type <strong>Save to Browning</strong>. Tap the <strong>&#8505;</strong> icon (top right), toggle on <strong>Show in Share Sheet</strong>. Under share types, keep <strong>URLs</strong> selected.</p>
+          <p>Tap the name at the top, type <strong>Save to Browning</strong>. Tap the <strong>&#8505;</strong> icon (top right), toggle on <strong>Show in Share Sheet</strong>. Under share types, select <strong>anything</strong> (so it works from any app including Claude, Safari, social media, etc.).</p>
         </div>
       </div>
 
       <div class="step">
         <div class="step-num">3</div>
         <div class="step-content">
-          <h3>Add "Get Contents of URL"</h3>
-          <p>Tap <strong>Add Action</strong>. In the search bar, type <strong>Get Contents of URL</strong> and tap it.</p>
+          <h3>Add "Get URLs from Input"</h3>
+          <p>Tap <strong>Add Action</strong>. Search for <strong>Get URLs from</strong> and add it. Make sure it says <strong>Get URLs from Shortcut Input</strong>.</p>
+          <div class="note-box">
+            This step extracts clean web URLs from whatever the source app shares. Without it, some apps (like Claude, Mail, Notes) pass raw content that includes <strong>mailto:</strong> or other non-web links that break the request.
+          </div>
         </div>
       </div>
 
       <div class="step">
         <div class="step-num">4</div>
+        <div class="step-content">
+          <h3>Add "Get Contents of URL"</h3>
+          <p>Tap <strong>Add Action</strong>. Search for <strong>Get Contents of URL</strong> and tap it.</p>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="step-num">5</div>
         <div class="step-content">
           <h3>Set the URL</h3>
           <p>Tap the blue <strong>URL</strong> text inside the action. Clear it. Paste this:</p>
@@ -280,18 +291,18 @@
       </div>
 
       <div class="step">
-        <div class="step-num">5</div>
+        <div class="step-num">6</div>
         <div class="step-content">
-          <h3>Append the shared link</h3>
-          <p>Tap <strong>right after the = sign</strong> you just pasted. Look above the keyboard for a row of variables. Tap <strong>Shortcut Input</strong> (blue pill). If you don't see it, tap the <strong>{x}</strong> button above the keyboard to browse variables.</p>
+          <h3>Append the extracted URL</h3>
+          <p>Tap <strong>right after the = sign</strong> you just pasted. Look above the keyboard for the variables bar. Tap <strong>URLs</strong> (the output from step 3 &mdash; NOT Shortcut Input). If you don't see it, tap the <strong>{x}</strong> button above the keyboard to browse variables.</p>
           <div class="note-box">
-            The final URL field should show the pasted text ending in <strong>=</strong> followed by a blue <strong>Shortcut Input</strong> bubble.
+            The final URL field should show the pasted text ending in <strong>=</strong> followed by a blue <strong>URLs</strong> bubble (from "Get URLs from Input"). Do <strong>not</strong> use "Shortcut Input" here &mdash; that's the raw share data which may contain mailto: links.
           </div>
         </div>
       </div>
 
       <div class="step">
-        <div class="step-num">6</div>
+        <div class="step-num">7</div>
         <div class="step-content">
           <h3>Add notification</h3>
           <p>Tap the search bar at the bottom. Type <strong>Show Notification</strong> and add it. Set the message to <strong>Saved to Browning!</strong></p>
@@ -299,10 +310,10 @@
       </div>
 
       <div class="step">
-        <div class="step-num">7</div>
+        <div class="step-num">8</div>
         <div class="step-content">
           <h3>Test it</h3>
-          <p>Open Safari, tap the <strong>Share</strong> button (square with arrow), scroll down and tap <strong>Save to Browning</strong>.</p>
+          <p>Open Safari, tap the <strong>Share</strong> button (square with arrow), scroll down and tap <strong>Save to Browning</strong>. Also test from the <strong>Claude app</strong>, <strong>Twitter</strong>, <strong>Instagram</strong>, etc.</p>
         </div>
       </div>
     </div>
@@ -310,7 +321,7 @@
     <!-- FULL: Links + Files -->
     <div class="tab-content" id="tab-full">
       <div class="note-box" style="margin-bottom: 24px;">
-        This version handles <strong>links AND files</strong> (photos, PDFs, videos). It uses an If/Otherwise block so links go to the extractor and files get uploaded directly.
+        This version handles <strong>links AND files</strong> (photos, PDFs, videos, documents). It uses an If/Otherwise block so links go to the extractor and files get uploaded directly. Works from Safari, Claude app, social media, camera roll, Files &mdash; everything.
       </div>
 
       <div class="step">
@@ -332,15 +343,26 @@
       <div class="step">
         <div class="step-num">3</div>
         <div class="step-content">
-          <h3>Add an If action</h3>
-          <p>Tap <strong>Add Action</strong>, search for <strong>If</strong> and add it. Set it to: <strong>If</strong> Shortcut Input <strong>has any value</strong>. Then tap the <strong>If</strong> condition and change it to:</p>
-          <div class="note-box">If &rarr; <strong>Shortcut Input</strong> &rarr; <strong>is URL</strong></div>
-          <p style="margin-top: 8px;">This checks whether the shared item is a link or a file.</p>
+          <h3>Add "Get URLs from Input"</h3>
+          <p>Tap <strong>Add Action</strong>. Search for <strong>Get URLs from</strong> and add it. Make sure it says <strong>Get URLs from Shortcut Input</strong>.</p>
+          <div class="note-box">
+            This extracts clean web URLs from whatever the source app shares. Some apps (Claude, Mail, Notes) pass raw content containing <strong>mailto:</strong> or other non-web links. This step filters those out.
+          </div>
         </div>
       </div>
 
       <div class="step">
         <div class="step-num">4</div>
+        <div class="step-content">
+          <h3>Add an If action</h3>
+          <p>Tap <strong>Add Action</strong>, search for <strong>If</strong> and add it. Set the condition to:</p>
+          <div class="note-box">If &rarr; <strong>URLs</strong> (from step 3) &rarr; <strong>has any value</strong></div>
+          <p style="margin-top: 8px;">This checks whether the shared item contained a web link. If yes &rarr; extract the link. If no &rarr; it's a file, upload it directly.</p>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="step-num">5</div>
         <div class="step-content">
           <h3>Inside If (for links)</h3>
           <p>Under the <strong>If</strong> block, add <strong>Get Contents of URL</strong>. Tap the blue URL text, clear it, and paste:</p>
@@ -348,12 +370,12 @@
             <code id="apiUrl2">https://content-extractor.devin-b58.workers.dev/api/share?url=</code>
             <span class="copy-hint" id="copyHint2">Tap to copy</span>
           </div>
-          <p style="margin-top: 8px;">Then tap after the <strong>=</strong> and insert the <strong>Shortcut Input</strong> variable (blue pill from the variables bar above the keyboard).</p>
+          <p style="margin-top: 8px;">Then tap after the <strong>=</strong> and insert the <strong>URLs</strong> variable (from step 3 &mdash; NOT Shortcut Input).</p>
         </div>
       </div>
 
       <div class="step">
-        <div class="step-num">5</div>
+        <div class="step-num">6</div>
         <div class="step-content">
           <h3>Inside Otherwise (for files)</h3>
           <p>Tap inside the <strong>Otherwise</strong> block. Add <strong>Get Contents of URL</strong> again. This time set it up as a <strong>POST</strong> request:</p>
@@ -363,7 +385,7 @@
             <strong>Request Body:</strong> Tap and change to <strong>Form</strong>.<br>
             <strong>Add field:</strong> Tap "Add new field" &rarr; choose <strong>File</strong>.<br>
             <strong>Key:</strong> Type <strong>file</strong><br>
-            <strong>Value:</strong> Tap and select <strong>Shortcut Input</strong>.
+            <strong>Value:</strong> Tap and select <strong>Shortcut Input</strong> (the original shared item).
           </div>
           <div class="url-box" onclick="copyUrl('apiUrl3','copyHint3')" style="margin-top: 10px;">
             <code id="apiUrl3">https://content-extractor.devin-b58.workers.dev/api/upload</code>
@@ -373,7 +395,7 @@
       </div>
 
       <div class="step">
-        <div class="step-num">6</div>
+        <div class="step-num">7</div>
         <div class="step-content">
           <h3>Add notification (after End If)</h3>
           <p>Below the <strong>End If</strong>, add <strong>Show Notification</strong> and set the message to <strong>Saved to Browning!</strong></p>
@@ -381,10 +403,10 @@
       </div>
 
       <div class="step">
-        <div class="step-num">7</div>
+        <div class="step-num">8</div>
         <div class="step-content">
           <h3>Test it</h3>
-          <p>Test with a <strong>link</strong>: share a Safari page. Test with a <strong>file</strong>: share a photo from your camera roll or a PDF from Files.</p>
+          <p>Test with a <strong>link</strong>: share a Safari page. Test with a <strong>file</strong>: share a photo from camera roll or a PDF from Files. Test from <strong>Claude app</strong>: share a document or conversation link.</p>
         </div>
       </div>
     </div>
@@ -428,7 +450,17 @@
       <div class="feature">
         <div class="feature-icon">&#128172;</div>
         <h3>Reddit &amp; LinkedIn</h3>
-        <p>Post and comment extraction</p>
+        <p>Posts, comments, newsletters</p>
+      </div>
+      <div class="feature">
+        <div class="feature-icon">&#128248;</div>
+        <h3>Instagram &amp; Threads</h3>
+        <p>Captions, reels, posts</p>
+      </div>
+      <div class="feature">
+        <div class="feature-icon">&#128196;</div>
+        <h3>Facebook</h3>
+        <p>Posts and video descriptions</p>
       </div>
       <div class="feature">
         <div class="feature-icon">&#127760;</div>
