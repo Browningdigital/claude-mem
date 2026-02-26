@@ -1,0 +1,10 @@
+name = "oci-provisioner"
+main = "oci-provisioner.ts"
+compatibility_date = "2025-02-01"
+
+[triggers]
+crons = ["* * * * *"]
+
+[vars]
+OCI_REGION = "us-chicago-1"
+OCI_ADS = "NvCA:US-CHICAGO-1-AD-1,NvCA:US-CHICAGO-1-AD-2,NvCA:US-CHICAGO-1-AD-3"
