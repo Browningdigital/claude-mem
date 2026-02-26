@@ -68,6 +68,8 @@ import { DataRoutes } from './worker/http/routes/DataRoutes.js';
 import { SearchRoutes } from './worker/http/routes/SearchRoutes.js';
 import { SettingsRoutes } from './worker/http/routes/SettingsRoutes.js';
 import { LogsRoutes } from './worker/http/routes/LogsRoutes.js';
+import { ContentRoutes } from './worker/http/routes/ContentRoutes.js';
+import { ContentIngestService } from './worker/ContentIngestService.js';
 
 // Process management for zombie cleanup (Issue #737)
 import { startOrphanReaper, reapOrphanedProcesses } from './worker/ProcessRegistry.js';
@@ -116,6 +118,7 @@ export class WorkerService {
   private paginationHelper: PaginationHelper;
   private settingsManager: SettingsManager;
   private sessionEventBroadcaster: SessionEventBroadcaster;
+  private contentIngestService: ContentIngestService;
 
   // Route handlers
   private searchRoutes: SearchRoutes | null = null;
@@ -144,6 +147,7 @@ export class WorkerService {
     this.paginationHelper = new PaginationHelper(this.dbManager);
     this.settingsManager = new SettingsManager(this.dbManager);
     this.sessionEventBroadcaster = new SessionEventBroadcaster(this.sseBroadcaster, this);
+    this.contentIngestService = new ContentIngestService();
 
     // Set callback for when sessions are deleted
     this.sessionManager.setOnSessionDeleted(() => {
@@ -199,6 +203,7 @@ export class WorkerService {
     this.server.registerRoutes(new DataRoutes(this.paginationHelper, this.dbManager, this.sessionManager, this.sseBroadcaster, this, this.startTime));
     this.server.registerRoutes(new SettingsRoutes(this.settingsManager));
     this.server.registerRoutes(new LogsRoutes());
+    this.server.registerRoutes(new ContentRoutes(this.contentIngestService));
 
     // Early handler for /api/context/inject to avoid 404 during startup
     this.server.app.get('/api/context/inject', async (req, res, next) => {

@@ -10,6 +10,7 @@ import { homedir } from 'os';
 import { unlinkSync } from 'fs';
 import { SessionStore } from '../sqlite/SessionStore.js';
 import { logger } from '../../utils/logger.js';
+import { ContentIngestService } from '../worker/ContentIngestService.js';
 import { getProjectName } from '../../utils/project-name.js';
 
 import type { ContextInput, ContextConfig, Observation, SessionSummary } from './types.js';
@@ -154,8 +155,8 @@ export async function generateContext(
       return renderEmptyState(project, useColors);
     }
 
-    // Build and return context
-    return buildContextOutput(
+    // Build memory context
+    let context = buildContextOutput(
       project,
       observations,
       summaries,
@@ -164,6 +165,28 @@ export async function generateContext(
       input?.session_id,
       useColors
     );
+
+    // Enrich with persistent memory context (non-blocking, failure-tolerant)
+    try {
+      const contentService = new ContentIngestService();
+
+      // Load core memories from Browning Memory (survives compaction)
+      const memoryContext = await contentService.generateMemoryContext();
+      if (memoryContext) {
+        context += '\n\n' + memoryContext;
+      }
+
+      // Load content pipeline digest
+      const digest = await contentService.generateContentDigest();
+      if (digest && !digest.includes('Unable to load')) {
+        context += '\n\n' + digest;
+      }
+    } catch (error) {
+      // Content pipeline enrichment is optional — don't break context generation
+      logger.debug('CONTEXT', 'Content pipeline enrichment skipped', {}, error as Error);
+    }
+
+    return context;
   } finally {
     db.close();
   }
