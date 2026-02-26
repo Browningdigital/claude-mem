@@ -1,0 +1,35 @@
+[Unit]
+Description=Browning Cloud Node — Task Watcher
+Documentation=https://github.com/Browningdigital/claude-mem/tree/main/cloud-node
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=agent
+Group=agent
+WorkingDirectory=/home/agent
+ExecStart=/home/agent/claude-mem/cloud-node/scripts/task-watcher.sh
+Restart=always
+RestartSec=10
+
+# Environment
+EnvironmentFile=/home/agent/.config/task-watcher.env
+
+# Resource limits — prevent runaway Claude processes from consuming the VM
+MemoryMax=4G
+CPUQuota=200%
+
+# Security hardening — agent needs home dir access for workspace
+# but restrict everything else
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=/home/agent/workspace /home/agent/claude-mem /home/agent/.config /tmp
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=task-watcher
+
+[Install]
+WantedBy=multi-user.target

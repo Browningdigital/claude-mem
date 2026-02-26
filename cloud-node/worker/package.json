@@ -1,0 +1,15 @@
+{
+  "name": "browning-cloud-workers",
+  "private": true,
+  "scripts": {
+    "deploy:dispatcher": "wrangler deploy -c wrangler.toml",
+    "deploy:sales": "wrangler deploy -c wrangler-sales.toml",
+    "deploy:poster": "wrangler deploy -c wrangler-poster.toml",
+    "deploy:all": "npm run deploy:dispatcher && npm run deploy:sales && npm run deploy:poster"
+  },
+  "devDependencies": {
+    "wrangler": "^3.0.0",
+    "typescript": "^5.0.0",
+    "@cloudflare/workers-types": "^4.0.0"
+  }
+}

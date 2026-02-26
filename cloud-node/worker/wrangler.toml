@@ -1,0 +1,10 @@
+name = "cloud-node-dispatcher"
+main = "task-dispatcher.ts"
+compatibility_date = "2025-02-01"
+
+# Deploy: wrangler deploy
+# Secrets (set before deploying):
+#   wrangler secret put SUPABASE_URL    → https://wcdyvukzlxxkgvxomaxr.supabase.co
+#   wrangler secret put SUPABASE_KEY    → (service_role_key from Browning Memory)
+#   wrangler secret put TASK_AUTH_TOKEN  → (generate: openssl rand -hex 32)
+#   wrangler secret put ALLOWED_ORIGIN  → https://yourdomain.com (optional CORS restriction)

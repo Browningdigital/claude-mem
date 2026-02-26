@@ -1,0 +1,11 @@
+[Unit]
+Description=Run scheduled task dispatcher every minute
+
+[Timer]
+Unit=scheduled-dispatcher.service
+OnCalendar=*-*-* *:*:00
+Persistent=true
+AccuracySec=5s
+
+[Install]
+WantedBy=timers.target

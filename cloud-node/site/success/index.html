@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Purchase Complete — Browning Digital</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+      background: #fafafa;
+      color: #1a1a2e;
+      line-height: 1.6;
+      -webkit-font-smoothing: antialiased;
+    }
+    ::selection { background: rgba(255, 144, 232, 0.25); }
+
+    .success-page {
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 40px 24px;
+    }
+    .card {
+      max-width: 520px;
+      width: 100%;
+      text-align: center;
+      background: #fff;
+      border: 1px solid #e8e8e8;
+      border-radius: 12px;
+      padding: 48px 36px;
+      box-shadow: 0 4px 24px rgba(0,0,0,0.06);
+    }
+
+    .check-mark {
+      width: 72px; height: 72px;
+      border-radius: 50%;
+      background: #f0fdf4;
+      border: 2px solid #4ade80;
+      display: flex; align-items: center; justify-content: center;
+      color: #22c55e;
+      margin: 0 auto 24px;
+    }
+    .error-icon {
+      width: 72px; height: 72px;
+      border-radius: 50%;
+      background: #fff5f5;
+      border: 2px solid #fca5a5;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 36px; color: #ef4444; font-weight: 800;
+      margin: 0 auto 24px;
+    }
+    .spinner {
+      width: 40px; height: 40px;
+      border: 3px solid #e8e8e8;
+      border-top-color: #ff90e8;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+      margin: 0 auto 24px;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    h1 { font-size: 32px; font-weight: 800; margin-bottom: 8px; }
+    h2 { font-size: 24px; font-weight: 700; margin-bottom: 12px; }
+    .product-name { color: #e64ba8; font-size: 16px; font-weight: 600; margin-bottom: 16px; }
+    .message, .sub { color: #666; font-size: 16px; margin-bottom: 32px; }
+
+    .download-btn {
+      display: inline-block;
+      padding: 16px 40px;
+      background: #ff90e8;
+      color: #000;
+      text-decoration: none;
+      border-radius: 8px;
+      font-size: 17px;
+      font-weight: 700;
+      margin-bottom: 32px;
+      transition: transform 0.15s;
+    }
+    .download-btn:hover { transform: translateY(-2px); }
+
+    .next-steps {
+      text-align: left;
+      background: #fafafa;
+      border: 1px solid #e8e8e8;
+      border-radius: 10px;
+      padding: 24px;
+      margin-bottom: 24px;
+    }
+    .next-steps h3 { font-size: 16px; font-weight: 700; margin-bottom: 12px; }
+    .next-steps ol { padding-left: 20px; color: #666; font-size: 14px; }
+    .next-steps li { margin-bottom: 8px; }
+
+    .support { color: #999; font-size: 14px; }
+    .support a { color: #e64ba8; text-decoration: none; }
+
+    .support-btn {
+      display: inline-block;
+      padding: 12px 32px;
+      background: transparent;
+      border: 1px solid #e8e8e8;
+      border-radius: 8px;
+      color: #666;
+      text-decoration: none;
+      margin: 16px 0;
+      font-size: 14px;
+    }
+    .back-link { display: block; margin-top: 16px; color: #999; text-decoration: none; font-size: 14px; }
+
+    .hidden { display: none; }
+  </style>
+</head>
+<body>
+  <div class="success-page">
+
+    <!-- Loading state -->
+    <div class="card" id="loadingCard">
+      <div class="spinner"></div>
+      <h2>Processing your payment...</h2>
+      <p class="sub">Please don't close this page.</p>
+    </div>
+
+    <!-- Success state -->
+    <div class="card hidden" id="successCard">
+      <div class="check-mark">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" width="36" height="36"><polyline points="20 6 9 17 4 12"/></svg>
+      </div>
+      <h1>You're in!</h1>
+      <p class="product-name" id="productName"></p>
+      <p class="message">
+        Your purchase is confirmed. Check your email for the download link and setup instructions.
+      </p>
+      <a href="#" class="download-btn hidden" id="downloadBtn">Download Now</a>
+      <div class="next-steps">
+        <h3>What's next</h3>
+        <ol>
+          <li>Download the starter kit</li>
+          <li>Create free accounts: Oracle Cloud, Cloudflare, Supabase</li>
+          <li>Run the provisioner script — it handles everything else</li>
+          <li>Your AI agent is live in ~15 minutes</li>
+        </ol>
+      </div>
+      <div class="support">
+        Need help? <a href="mailto:devin@browningdigital.com">devin@browningdigital.com</a>
+      </div>
+    </div>
+
+    <!-- Error state -->
+    <div class="card hidden" id="errorCard">
+      <div class="error-icon">!</div>
+      <h2>Something went wrong</h2>
+      <p class="sub">Your payment may still have gone through. Check your email or contact us.</p>
+      <a href="mailto:devin@browningdigital.com" class="support-btn">Contact Support</a>
+      <a href="/" class="back-link">&larr; Back to store</a>
+    </div>
+
+  </div>
+
+  <script>
+    (function () {
+      'use strict';
+
+      var API_URL = 'https://browning-sales-engine.devin-b58.workers.dev';
+      var params = new URLSearchParams(window.location.search);
+      var token = params.get('token');
+      var isPlan = params.get('plan');
+      var isCrypto = params.get('method') === 'crypto';
+
+      function showSuccess(name, deliveryUrl) {
+        document.getElementById('loadingCard').classList.add('hidden');
+        document.getElementById('productName').textContent = name;
+        if (deliveryUrl) {
+          var btn = document.getElementById('downloadBtn');
+          btn.href = deliveryUrl;
+          btn.classList.remove('hidden');
+        }
+        document.getElementById('successCard').classList.remove('hidden');
+      }
+
+      function showError() {
+        document.getElementById('loadingCard').classList.add('hidden');
+        document.getElementById('errorCard').classList.remove('hidden');
+      }
+
+      if (isCrypto || isPlan) {
+        showSuccess('Zero-Cost AI Infrastructure Starter Kit', '');
+        return;
+      }
+
+      if (token) {
+        fetch(API_URL + '/api/paypal/capture', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ order_id: token })
+        })
+          .then(function (res) { return res.json(); })
+          .then(function (data) {
+            if (data.success) {
+              showSuccess(
+                (data.sale && data.sale.product_name) || 'Your purchase',
+                data.delivery_url || ''
+              );
+            } else {
+              showError();
+            }
+          })
+          .catch(showError);
+      } else {
+        showSuccess('Zero-Cost AI Infrastructure Starter Kit', '');
+      }
+    })();
+  </script>
+</body>
+</html>
