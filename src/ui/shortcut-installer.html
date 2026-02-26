@@ -64,6 +64,16 @@
     }
     .install-btn:active { transform: scale(0.97); }
     .install-btn svg { width: 22px; height: 22px; }
+    .install-btn.success {
+      background: linear-gradient(135deg, #22c55e, #16a34a);
+      box-shadow: 0 4px 20px rgba(34, 197, 94, 0.3);
+    }
+    .hero-note {
+      font-size: 13px;
+      color: rgba(255,255,255,0.35);
+      margin-top: 16px;
+      line-height: 1.4;
+    }
     .setup-section {
       width: 100%;
       max-width: 480px;
@@ -105,53 +115,6 @@
       line-height: 1.5;
     }
     .step-content p strong { color: rgba(255,255,255,0.8); }
-    .url-box {
-      background: rgba(255,255,255,0.04);
-      border: 1px solid rgba(255,255,255,0.1);
-      border-radius: 10px;
-      padding: 12px 16px;
-      margin-top: 10px;
-      position: relative;
-      cursor: pointer;
-    }
-    .url-box code {
-      font-size: 12px;
-      color: #a5b4fc;
-      word-break: break-all;
-      line-height: 1.4;
-    }
-    .url-box .copy-hint {
-      font-size: 11px;
-      color: rgba(255,255,255,0.3);
-      margin-top: 6px;
-      display: block;
-    }
-    .url-box.copied .copy-hint { color: #4ade80; }
-    .tab-bar {
-      display: flex;
-      gap: 8px;
-      margin-bottom: 24px;
-    }
-    .tab {
-      flex: 1;
-      padding: 12px 16px;
-      border-radius: 10px;
-      border: 1px solid rgba(255,255,255,0.1);
-      background: rgba(255,255,255,0.03);
-      color: rgba(255,255,255,0.5);
-      font-size: 14px;
-      font-weight: 600;
-      text-align: center;
-      cursor: pointer;
-      transition: all 0.2s;
-    }
-    .tab.active {
-      background: rgba(99, 102, 241, 0.15);
-      border-color: rgba(99, 102, 241, 0.4);
-      color: #a5b4fc;
-    }
-    .tab-content { display: none; }
-    .tab-content.active { display: block; }
     .note-box {
       background: rgba(99, 102, 241, 0.08);
       border: 1px solid rgba(99, 102, 241, 0.2);
@@ -212,6 +175,48 @@
       background: rgba(255,255,255,0.06);
       margin: 0 24px 40px;
     }
+    .how-it-works {
+      width: 100%;
+      max-width: 480px;
+      padding: 0 24px 40px;
+    }
+    .how-it-works h2 {
+      font-size: 20px;
+      font-weight: 600;
+      margin-bottom: 20px;
+      color: rgba(255,255,255,0.9);
+    }
+    .collapsible-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 16px;
+      background: rgba(255,255,255,0.03);
+      border: 1px solid rgba(255,255,255,0.06);
+      border-radius: 12px;
+      cursor: pointer;
+      margin-bottom: 12px;
+      transition: all 0.2s;
+    }
+    .collapsible-header:hover {
+      background: rgba(255,255,255,0.05);
+    }
+    .collapsible-header h3 {
+      font-size: 15px;
+      font-weight: 600;
+      color: rgba(255,255,255,0.7);
+    }
+    .collapsible-header .arrow {
+      color: rgba(255,255,255,0.3);
+      font-size: 14px;
+      transition: transform 0.2s;
+    }
+    .collapsible-header.open .arrow { transform: rotate(90deg); }
+    .collapsible-body {
+      display: none;
+      padding: 0 0 24px;
+    }
+    .collapsible-body.open { display: block; }
   </style>
 </head>
 <body>
@@ -223,192 +228,51 @@
       Send any URL, file, photo, or PDF from your iPhone directly to the Browning Digital content pipeline.
       Everything is extracted, processed, and stored automatically.
     </p>
-    <a href="#setup" class="install-btn" id="installBtn">
+    <button class="install-btn" id="installBtn" onclick="downloadShortcut()">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
         <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
         <polyline points="7 10 12 15 17 10"/>
         <line x1="12" y1="15" x2="12" y2="3"/>
       </svg>
-      Set Up Shortcut
-    </a>
+      Install Shortcut
+    </button>
+    <p class="hero-note">
+      One tap to install. Handles links, PDFs, photos, and files.<br>
+      Works from Safari, Claude, Twitter, Instagram &mdash; any app.
+    </p>
   </div>
 
-  <div class="setup-section" id="setup">
-    <h2>Choose Your Shortcut</h2>
+  <div class="divider"></div>
 
-    <div class="tab-bar">
-      <div class="tab active" onclick="showTab('simple')">Links Only</div>
-      <div class="tab" onclick="showTab('full')">Links + Files</div>
-    </div>
-
-    <!-- SIMPLE: Links only -->
-    <div class="tab-content active" id="tab-simple">
-      <div class="step">
-        <div class="step-num">1</div>
-        <div class="step-content">
-          <h3>Create a new shortcut</h3>
-          <p>Open the <strong>Shortcuts</strong> app. Tap <strong>+</strong> in the top right.</p>
-        </div>
-      </div>
-
-      <div class="step">
-        <div class="step-num">2</div>
-        <div class="step-content">
-          <h3>Name it and enable sharing</h3>
-          <p>Tap the name at the top, type <strong>Save to Browning</strong>. Tap the <strong>&#8505;</strong> icon (top right), toggle on <strong>Show in Share Sheet</strong>. Under share types, select <strong>anything</strong> (so it works from any app including Claude, Safari, social media, etc.).</p>
-        </div>
-      </div>
-
-      <div class="step">
-        <div class="step-num">3</div>
-        <div class="step-content">
-          <h3>Add "Get URLs from Input"</h3>
-          <p>Tap <strong>Add Action</strong>. Search for <strong>Get URLs from</strong> and add it. Make sure it says <strong>Get URLs from Shortcut Input</strong>.</p>
-          <div class="note-box">
-            This step extracts clean web URLs from whatever the source app shares. Without it, some apps (like Claude, Mail, Notes) pass raw content that includes <strong>mailto:</strong> or other non-web links that break the request.
-          </div>
-        </div>
-      </div>
-
-      <div class="step">
-        <div class="step-num">4</div>
-        <div class="step-content">
-          <h3>Add "Get Contents of URL"</h3>
-          <p>Tap <strong>Add Action</strong>. Search for <strong>Get Contents of URL</strong> and tap it.</p>
-        </div>
-      </div>
-
-      <div class="step">
-        <div class="step-num">5</div>
-        <div class="step-content">
-          <h3>Set the URL</h3>
-          <p>Tap the blue <strong>URL</strong> text inside the action. Clear it. Paste this:</p>
-          <div class="url-box" onclick="copyUrl('apiUrl1','copyHint1')">
-            <code id="apiUrl1">https://content-extractor.devin-b58.workers.dev/api/share?url=</code>
-            <span class="copy-hint" id="copyHint1">Tap to copy</span>
-          </div>
-        </div>
-      </div>
-
-      <div class="step">
-        <div class="step-num">6</div>
-        <div class="step-content">
-          <h3>Append the extracted URL</h3>
-          <p>Tap <strong>right after the = sign</strong> you just pasted. Look above the keyboard for the variables bar. Tap <strong>URLs</strong> (the output from step 3 &mdash; NOT Shortcut Input). If you don't see it, tap the <strong>{x}</strong> button above the keyboard to browse variables.</p>
-          <div class="note-box">
-            The final URL field should show the pasted text ending in <strong>=</strong> followed by a blue <strong>URLs</strong> bubble (from "Get URLs from Input"). Do <strong>not</strong> use "Shortcut Input" here &mdash; that's the raw share data which may contain mailto: links.
-          </div>
-        </div>
-      </div>
-
-      <div class="step">
-        <div class="step-num">7</div>
-        <div class="step-content">
-          <h3>Add notification</h3>
-          <p>Tap the search bar at the bottom. Type <strong>Show Notification</strong> and add it. Set the message to <strong>Saved to Browning!</strong></p>
-        </div>
-      </div>
-
-      <div class="step">
-        <div class="step-num">8</div>
-        <div class="step-content">
-          <h3>Test it</h3>
-          <p>Open Safari, tap the <strong>Share</strong> button (square with arrow), scroll down and tap <strong>Save to Browning</strong>. Also test from the <strong>Claude app</strong>, <strong>Twitter</strong>, <strong>Instagram</strong>, etc.</p>
-        </div>
+  <div class="how-it-works">
+    <h2>After Installing</h2>
+    <div class="step">
+      <div class="step-num">1</div>
+      <div class="step-content">
+        <h3>Tap "Add Shortcut"</h3>
+        <p>When the Shortcuts app opens, tap <strong>Add Shortcut</strong> to confirm the install.</p>
       </div>
     </div>
 
-    <!-- FULL: Links + Files -->
-    <div class="tab-content" id="tab-full">
-      <div class="note-box" style="margin-bottom: 24px;">
-        This version handles <strong>links AND files</strong> (photos, PDFs, videos, documents). It uses an If/Otherwise block so links go to the extractor and files get uploaded directly. Works from Safari, Claude app, social media, camera roll, Files &mdash; everything.
+    <div class="step">
+      <div class="step-num">2</div>
+      <div class="step-content">
+        <h3>Share from any app</h3>
+        <p>Open Safari, Twitter, Instagram, Claude, or any app. Tap the <strong>Share</strong> button (square with arrow).</p>
       </div>
+    </div>
 
-      <div class="step">
-        <div class="step-num">1</div>
-        <div class="step-content">
-          <h3>Create a new shortcut</h3>
-          <p>Open the <strong>Shortcuts</strong> app. Tap <strong>+</strong> in the top right.</p>
-        </div>
+    <div class="step">
+      <div class="step-num">3</div>
+      <div class="step-content">
+        <h3>Tap "Save to Browning"</h3>
+        <p>Scroll down in the share sheet and tap <strong>Save to Browning</strong>. You'll see a notification when it's saved.</p>
       </div>
+    </div>
 
-      <div class="step">
-        <div class="step-num">2</div>
-        <div class="step-content">
-          <h3>Name it and enable sharing</h3>
-          <p>Tap the name at the top, type <strong>Save to Browning</strong>. Tap the <strong>&#8505;</strong> icon, toggle on <strong>Show in Share Sheet</strong>. Under share types, select <strong>anything</strong> (URLs, Images, Files, etc.).</p>
-        </div>
-      </div>
-
-      <div class="step">
-        <div class="step-num">3</div>
-        <div class="step-content">
-          <h3>Add "Get URLs from Input"</h3>
-          <p>Tap <strong>Add Action</strong>. Search for <strong>Get URLs from</strong> and add it. Make sure it says <strong>Get URLs from Shortcut Input</strong>.</p>
-          <div class="note-box">
-            This extracts clean web URLs from whatever the source app shares. Some apps (Claude, Mail, Notes) pass raw content containing <strong>mailto:</strong> or other non-web links. This step filters those out.
-          </div>
-        </div>
-      </div>
-
-      <div class="step">
-        <div class="step-num">4</div>
-        <div class="step-content">
-          <h3>Add an If action</h3>
-          <p>Tap <strong>Add Action</strong>, search for <strong>If</strong> and add it. Set the condition to:</p>
-          <div class="note-box">If &rarr; <strong>URLs</strong> (from step 3) &rarr; <strong>has any value</strong></div>
-          <p style="margin-top: 8px;">This checks whether the shared item contained a web link. If yes &rarr; extract the link. If no &rarr; it's a file, upload it directly.</p>
-        </div>
-      </div>
-
-      <div class="step">
-        <div class="step-num">5</div>
-        <div class="step-content">
-          <h3>Inside If (for links)</h3>
-          <p>Under the <strong>If</strong> block, add <strong>Get Contents of URL</strong>. Tap the blue URL text, clear it, and paste:</p>
-          <div class="url-box" onclick="copyUrl('apiUrl2','copyHint2')">
-            <code id="apiUrl2">https://content-extractor.devin-b58.workers.dev/api/share?url=</code>
-            <span class="copy-hint" id="copyHint2">Tap to copy</span>
-          </div>
-          <p style="margin-top: 8px;">Then tap after the <strong>=</strong> and insert the <strong>URLs</strong> variable (from step 3 &mdash; NOT Shortcut Input).</p>
-        </div>
-      </div>
-
-      <div class="step">
-        <div class="step-num">6</div>
-        <div class="step-content">
-          <h3>Inside Otherwise (for files)</h3>
-          <p>Tap inside the <strong>Otherwise</strong> block. Add <strong>Get Contents of URL</strong> again. This time set it up as a <strong>POST</strong> request:</p>
-          <div class="note-box">
-            <strong>URL:</strong> Tap and paste the upload URL below.<br>
-            <strong>Method:</strong> Tap "GET" and change to <strong>POST</strong>.<br>
-            <strong>Request Body:</strong> Tap and change to <strong>Form</strong>.<br>
-            <strong>Add field:</strong> Tap "Add new field" &rarr; choose <strong>File</strong>.<br>
-            <strong>Key:</strong> Type <strong>file</strong><br>
-            <strong>Value:</strong> Tap and select <strong>Shortcut Input</strong> (the original shared item).
-          </div>
-          <div class="url-box" onclick="copyUrl('apiUrl3','copyHint3')" style="margin-top: 10px;">
-            <code id="apiUrl3">https://content-extractor.devin-b58.workers.dev/api/upload</code>
-            <span class="copy-hint" id="copyHint3">Tap to copy</span>
-          </div>
-        </div>
-      </div>
-
-      <div class="step">
-        <div class="step-num">7</div>
-        <div class="step-content">
-          <h3>Add notification (after End If)</h3>
-          <p>Below the <strong>End If</strong>, add <strong>Show Notification</strong> and set the message to <strong>Saved to Browning!</strong></p>
-        </div>
-      </div>
-
-      <div class="step">
-        <div class="step-num">8</div>
-        <div class="step-content">
-          <h3>Test it</h3>
-          <p>Test with a <strong>link</strong>: share a Safari page. Test with a <strong>file</strong>: share a photo from camera roll or a PDF from Files. Test from <strong>Claude app</strong>: share a document or conversation link.</p>
-        </div>
-      </div>
+    <div class="note-box" style="margin-top: 0;">
+      <strong>Links</strong> are extracted and processed (articles, social posts, YouTube transcripts).<br>
+      <strong>Files</strong> (PDFs, photos, documents) are uploaded directly to the pipeline.
     </div>
   </div>
 
@@ -470,6 +334,76 @@
     </div>
   </div>
 
+  <div class="divider"></div>
+
+  <div class="setup-section">
+    <div class="collapsible-header" onclick="toggleManual(this)">
+      <h3>Manual Setup (if download doesn't work)</h3>
+      <span class="arrow">&#9654;</span>
+    </div>
+    <div class="collapsible-body" id="manualSetup">
+      <div class="note-box" style="margin-top: 0; margin-bottom: 24px;">
+        Only use these instructions if the one-tap install above doesn't work on your device. The shortcut file handles everything automatically.
+      </div>
+
+      <div class="step">
+        <div class="step-num">1</div>
+        <div class="step-content">
+          <h3>Create a new shortcut</h3>
+          <p>Open the <strong>Shortcuts</strong> app. Tap <strong>+</strong> in the top right. Name it <strong>Save to Browning</strong>.</p>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="step-num">2</div>
+        <div class="step-content">
+          <h3>Enable sharing</h3>
+          <p>Tap the <strong>&#8505;</strong> icon, toggle on <strong>Show in Share Sheet</strong>. Under share types, select <strong>anything</strong>.</p>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="step-num">3</div>
+        <div class="step-content">
+          <h3>Add "Get URLs from Input"</h3>
+          <p>Search for <strong>Get URLs from</strong> and add it. Input: <strong>Shortcut Input</strong>.</p>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="step-num">4</div>
+        <div class="step-content">
+          <h3>Add If block</h3>
+          <p>Add <strong>If</strong> action. Condition: <strong>URLs</strong> (from step 3) <strong>has any value</strong>.</p>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="step-num">5</div>
+        <div class="step-content">
+          <h3>If (links): Get Contents of URL</h3>
+          <p>URL: <code style="color:#a5b4fc;font-size:12px;">https://content-extractor.devin-b58.workers.dev/api/share?url=</code> + <strong>URLs</strong> variable.</p>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="step-num">6</div>
+        <div class="step-content">
+          <h3>Otherwise (files): POST upload</h3>
+          <p>URL: <code style="color:#a5b4fc;font-size:12px;">https://content-extractor.devin-b58.workers.dev/api/upload</code><br>Method: <strong>POST</strong>, Body: <strong>Form</strong>, File field: key=<strong>file</strong>, value=<strong>Shortcut Input</strong>.</p>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="step-num">7</div>
+        <div class="step-content">
+          <h3>After End If: Show Notification</h3>
+          <p>Message: <strong>Saved to Browning!</strong></p>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <div class="footer">
     <p>
       Browning Digital &middot;
@@ -479,25 +413,44 @@
   </div>
 
   <script>
-    function showTab(name) {
-      document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-      document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
-      event.target.classList.add('active');
-      document.getElementById('tab-' + name).classList.add('active');
+    // Embedded shortcut binary (base64)
+    const SHORTCUT_B64 = 'YnBsaXN0MDDcAQIDBAUGBwgJCgsMDWprSGxxcnl6e4GCXxARV0ZXb3JrZmxvd0FjdGlvbnNfEBdXRldvcmtmbG93Q2xpZW50VmVyc2lvbl8QG1dGV29ya2Zsb3dIYXNPdXRwdXRGYWxsYmFja18QI1dGV29ya2Zsb3dIYXNTaG9ydGN1dElucHV0VmFyaWFibGVzXldGV29ya2Zsb3dJY29uXxAZV0ZXb3JrZmxvd0ltcG9ydFF1ZXN0aW9uc18QIVdGV29ya2Zsb3dJbnB1dENvbnRlbnRJdGVtQ2xhc3Nlc18QHldGV29ya2Zsb3dNaW5pbXVtQ2xpZW50VmVyc2lvbl8QJFdGV29ya2Zsb3dNaW5pbXVtQ2xpZW50VmVyc2lvblN0cmluZ18QGVdGV29ya2Zsb3dOb0lucHV0QmVoYXZpb3JfECJXRldvcmtmbG93T3V0cHV0Q29udGVudEl0ZW1DbGFzc2VzXxAPV0ZXb3JrZmxvd1R5cGVzqA4VJDE/Ql1f0g8QERJfEBpXRldvcmtmbG93QWN0aW9uSWRlbnRpZmllcl8QGldGV29ya2Zsb3dBY3Rpb25QYXJhbWV0ZXJzXxAfaXMud29ya2Zsb3cuYWN0aW9ucy5kZXRlY3QubGlua9ETFFRVVUlEXxAkRTg5RDdFQzAtREM5Mi00MTE5LTkyQ0MtMTgzRTFGOEJBRDYz0g8QFhdfEBlpcy53b3JrZmxvdy5hY3Rpb25zLmNvdW500hgTGSNVSW5wdXTSGhscIlVWYWx1ZV8QE1dGU2VyaWFsaXphdGlvblR5cGXTHR4fIBQhWk91dHB1dE5hbWVaT3V0cHV0VVVJRFRUeXBlVFVSTHNcQWN0aW9uT3V0cHV0XxAVV0ZUZXh0VG9rZW5BdHRhY2htZW50XxAkNTQwQ0Y1NzktMUM4OC00RkFFLTgwMDktNTUxM0EyRUI0MTI00g8QJSZfEB9pcy53b3JrZmxvdy5hY3Rpb25zLmNvbmRpdGlvbmFs1ScoKSorLC0uLy5fEBJHcm91cGluZ0lkZW50aWZpZXJbV0ZDb25kaXRpb25fEBFXRkNvbnRyb2xGbG93TW9kZVdXRklucHV0XVdGTnVtYmVyVmFsdWVfECRDNDY1NURDMC1FN0QyLTQyMkEtQURBNy1CMzEzNzQzOTMzOUYQBBAA0x0eHzAjIVVDb3VudNIPEDIzXxAfaXMud29ya2Zsb3cuYWN0aW9ucy5kb3dubG9hZHVybNITNDU2VVdGVVJMXxAkM0M2OTYxMTUtMjE4OC00QkQ4LUE5Q0QtOTBEOTg1REM3QTlB0hobNz7SODk6PV8QEmF0dGFjaG1lbnRzQnlSYW5nZVZzdHJpbmfROzxXezYyLCAxfdMdHh8gFCFvED8AaAB0AHQAcABzADoALwAvAGMAbwBuAHQAZQBuAHQALQBlAHgAdAByAGEAYwB0AG8AcgAuAGQAZQB2AGkAbgAtAGIANQA4AC4AdwBvAHIAawBlAHIAcwAuAGQAZQB2AC8AYQBwAGkALwBzAGgAYQByAGUAPwB1AHIAbAA9//xfEBFXRlRleHRUb2tlblN0cmluZ9IPECVA0icpLEEQAdIPEDJD1kQTRUZHNEhJSlpbXFhBZHZhbmNlZFxXRkZvcm1WYWx1ZXNeV0ZIVFRQQm9keVR5cGVcV0ZIVFRQTWV0aG9kCV8QJENEQTJCNkQ1LUIxODItNDE3Ri1CMjY1LTAyQkFDMTIxRTUxM9IaG0tZ0UxNXxAbV0ZEaWN0aW9uYXJ5RmllbGRWYWx1ZUl0ZW1zoU7TT1BRUlNWWldGSXRlbVR5cGVVV0ZLZXlXV0ZWYWx1ZRAC0hobVD7ROVVUZmlsZdIaG1ci0R9YXkV4dGVuc2lvbklucHV0XxAWV0ZEaWN0aW9uYXJ5RmllbGRWYWx1ZVRGb3JtVFBPU1RfEDpodHRwczovL2NvbnRlbnQtZXh0cmFjdG9yLmRldmluLWI1OC53b3JrZXJzLmRldi9hcGkvdXBsb2Fk0g8QJV7SJyksUtIPEGBhXxAgaXMud29ya2Zsb3cuYWN0aW9ucy5ub3RpZmljYXRpb27SYmNkZ18QGFdGTm90aWZpY2F0aW9uQWN0aW9uQm9keV8QGVdGTm90aWZpY2F0aW9uQWN0aW9uVGl0bGXSGhtlPtE5Zl8QElNhdmVkIHRvIEJyb3duaW5nIdIaG2g+0TlpXxAQU2F2ZSB0byBCcm93bmluZ1gyMzAyLjAuNAjSbW5vcF8QGVdGV29ya2Zsb3dJY29uR2x5cGhOdW1iZXJfEBhXRldvcmtmbG93SWNvblN0YXJ0Q29sb3IR6U8S/sQY/6Cmc3R1dnd4XxAQV0ZVUkxDb250ZW50SXRlbV8QEldGSW1hZ2VDb250ZW50SXRlbV8QEFdGUERGQ29udGVudEl0ZW1fEBhXRkdlbmVyaWNGaWxlQ29udGVudEl0ZW1fEBVXRlJpY2hUZXh0Q29udGVudEl0ZW1fEBpXRlNhZmFyaVdlYlBhZ2VDb250ZW50SXRlbREDhFM5MDDSfH1+f1ROYW1lWlBhcmFtZXRlcnNfECRXRldvcmtmbG93Tm9JbnB1dEJlaGF2aW9yQXNrRm9ySW5wdXTRgHNZSXRlbUNsYXNzoKGDXxAPQWN0aW9uRXh0ZW5zaW9uAAgAIQA1AE8AbQCTAKIAvgDiAQMBKgFGAWsBfQGGAYsBqAHFAecB6gHvAhYCGwI3AjwCQgJHAk0CYwJqAnUCgAKFAooClwKvAtYC2wL9AwgDHQMpAz0DRQNTA3oDfAN+A4UDiwOQA7IDtwO9A+QD6QPuBAMECgQNBBUEHASdBLEEtgS7BL0EwgTPBNgE5QT0BQEFAgUpBS4FMQVPBVEFWAVjBWkFcQVzBXgFewWABYUFiAWXBbAFtQW6BfcF/AYBBgYGKQYuBkkGZQZqBm0GggaHBooGnQamBqcGrAbIBuMG5gbrBuwG8wcGBxsHLgdJB2EHfgeBB4UHigePB5oHwQfEB84HzwfRAAAAAAAAAgEAAAAAAAAAhAAAAAAAAAAAAAAAAAAAB+M=';
+
+    function downloadShortcut() {
+      const btn = document.getElementById('installBtn');
+
+      // Decode base64 to binary
+      const raw = atob(SHORTCUT_B64);
+      const bytes = new Uint8Array(raw.length);
+      for (let i = 0; i < raw.length; i++) {
+        bytes[i] = raw.charCodeAt(i);
+      }
+
+      // Create blob and trigger download
+      const blob = new Blob([bytes], { type: 'application/octet-stream' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'Save to Browning.shortcut';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+
+      // Update button state
+      btn.classList.add('success');
+      btn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg> Downloaded!';
+      setTimeout(() => {
+        btn.classList.remove('success');
+        btn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg> Install Shortcut';
+      }, 3000);
     }
 
-    function copyUrl(codeId, hintId) {
-      const url = document.getElementById(codeId).textContent;
-      navigator.clipboard.writeText(url).then(() => {
-        const hint = document.getElementById(hintId);
-        const box = hint.closest('.url-box');
-        box.classList.add('copied');
-        hint.textContent = 'Copied!';
-        setTimeout(() => {
-          box.classList.remove('copied');
-          hint.textContent = 'Tap to copy';
-        }, 2000);
-      });
+    function toggleManual(header) {
+      const body = document.getElementById('manualSetup');
+      const isOpen = body.classList.contains('open');
+      body.classList.toggle('open');
+      header.classList.toggle('open');
     }
   </script>
 </body>
