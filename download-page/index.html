@@ -3,163 +3,173 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-<title>Download — Info Product Project Bible</title>
+<title>Downloads — Browning Digital</title>
 <style>
   *{margin:0;padding:0;box-sizing:border-box}
   body{
     font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
-    background:#0a0a0f;
-    color:#e0e0e0;
-    min-height:100dvh;
-    display:flex;
-    flex-direction:column;
-    align-items:center;
-    justify-content:center;
-    padding:24px env(safe-area-inset-right) 24px env(safe-area-inset-left);
+    background:#0a0a0f;color:#e0e0e0;
+    min-height:100dvh;display:flex;flex-direction:column;align-items:center;
+    padding:40px 20px env(safe-area-inset-bottom);
     -webkit-tap-highlight-color:transparent;
   }
+  .header{text-align:center;margin-bottom:32px}
+  .header h1{font-size:20px;font-weight:700;background:linear-gradient(135deg,#fff,#ccc);-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+  .header p{font-size:13px;color:#666;margin-top:6px}
+  .cards{display:flex;flex-direction:column;gap:20px;max-width:420px;width:100%}
   .card{
     background:linear-gradient(145deg,#141420,#1a1a2e);
-    border:1px solid rgba(255,144,232,0.15);
-    border-radius:20px;
-    padding:40px 28px;
-    max-width:420px;
-    width:100%;
-    text-align:center;
+    border:1px solid rgba(255,144,232,0.12);border-radius:18px;
+    padding:28px 24px;
   }
-  .icon{
-    width:64px;height:64px;
-    margin:0 auto 20px;
-    background:linear-gradient(135deg,#ff90e8,#a855f7);
-    border-radius:16px;
-    display:flex;align-items:center;justify-content:center;
-    font-size:28px;
+  .card-header{display:flex;align-items:center;gap:14px;margin-bottom:14px}
+  .card-icon{
+    width:48px;height:48px;border-radius:12px;
+    display:flex;align-items:center;justify-content:center;font-size:22px;flex-shrink:0;
   }
-  h1{
-    font-size:22px;
-    font-weight:700;
-    letter-spacing:-0.3px;
-    margin-bottom:8px;
-    background:linear-gradient(135deg,#fff,#ccc);
-    -webkit-background-clip:text;
-    -webkit-text-fill-color:transparent;
-  }
-  .sub{
-    font-size:14px;
-    color:#888;
-    margin-bottom:28px;
-    line-height:1.5;
-  }
-  .meta{
-    display:flex;
-    justify-content:center;
-    gap:20px;
-    margin-bottom:28px;
-    font-size:12px;
-    color:#666;
-  }
-  .meta span{
-    display:flex;
-    align-items:center;
-    gap:5px;
-  }
-  .meta svg{width:14px;height:14px;fill:#666}
+  .card-icon.full{background:linear-gradient(135deg,#ff90e8,#a855f7)}
+  .card-icon.slim{background:linear-gradient(135deg,#51cf66,#20c997)}
+  .card-title{font-size:17px;font-weight:600;color:#eee}
+  .card-sub{font-size:12px;color:#777;margin-top:2px}
+  .card-desc{font-size:13px;color:#888;line-height:1.5;margin-bottom:18px}
+  .tag-row{display:flex;gap:8px;margin-bottom:18px;flex-wrap:wrap}
+  .tag{font-size:11px;padding:4px 10px;border-radius:6px;background:rgba(255,255,255,0.05);color:#999}
+  .tag.rec{background:rgba(81,207,102,0.12);color:#51cf66}
   .dl-btn{
-    display:block;
-    width:100%;
-    padding:16px;
-    font-size:17px;
-    font-weight:600;
-    color:#0a0a0f;
-    background:linear-gradient(135deg,#ff90e8,#c084fc);
-    border:none;
-    border-radius:14px;
-    cursor:pointer;
-    -webkit-appearance:none;
-    touch-action:manipulation;
+    display:block;width:100%;padding:14px;font-size:16px;font-weight:600;
+    color:#0a0a0f;border:none;border-radius:12px;cursor:pointer;
+    -webkit-appearance:none;touch-action:manipulation;
     transition:transform .15s,box-shadow .15s;
   }
   .dl-btn:active{transform:scale(0.97)}
-  .dl-btn:hover{box-shadow:0 0 30px rgba(255,144,232,0.3)}
-  .done{
-    display:none;
-    color:#51cf66;
-    font-size:14px;
-    margin-top:14px;
-    font-weight:500;
-  }
+  .dl-btn.full{background:linear-gradient(135deg,#ff90e8,#c084fc)}
+  .dl-btn.full:hover{box-shadow:0 0 24px rgba(255,144,232,0.25)}
+  .dl-btn.slim{background:linear-gradient(135deg,#51cf66,#20c997)}
+  .dl-btn.slim:hover{box-shadow:0 0 24px rgba(81,207,102,0.25)}
+  .done{display:none;color:#51cf66;font-size:13px;margin-top:10px;text-align:center}
   .done.show{display:block}
-  .sections{
-    margin-top:24px;
-    text-align:left;
-    border-top:1px solid rgba(255,255,255,0.06);
-    padding-top:20px;
-  }
-  .sections h2{
-    font-size:11px;
-    text-transform:uppercase;
-    letter-spacing:1px;
-    color:#555;
-    margin-bottom:12px;
-  }
-  .sections ul{
-    list-style:none;
-    display:grid;
-    grid-template-columns:1fr 1fr;
-    gap:6px;
-  }
-  .sections li{
-    font-size:12px;
-    color:#777;
-    padding:6px 8px;
-    background:rgba(255,255,255,0.03);
-    border-radius:6px;
-  }
-  .brand{
-    margin-top:28px;
-    font-size:11px;
-    color:#444;
-    letter-spacing:0.5px;
-  }
+  .brand{text-align:center;margin-top:32px;font-size:11px;color:#333;letter-spacing:0.5px}
 </style>
 </head>
 <body>
-<div class="card">
-  <div class="icon">📋</div>
-  <h1>Info Product Project Bible</h1>
-  <p class="sub">Complete operational document — every worker, endpoint, payment flow, database table, and deployment URL for the Browning Digital info product business.</p>
-  <div class="meta">
-    <span><svg viewBox="0 0 16 16"><path d="M2 1.75C2 .784 2.784 0 3.75 0h6.586c.464 0 .909.184 1.237.513l2.914 2.914c.329.328.513.773.513 1.237v9.586A1.75 1.75 0 0 1 13.25 16h-9.5A1.75 1.75 0 0 1 2 14.25Zm1.75-.25a.25.25 0 0 0-.25.25v12.5c0 .138.112.25.25.25h9.5a.25.25 0 0 0 .25-.25V6h-2.75A1.75 1.75 0 0 1 9 4.25V1.5Zm6.75.062V4.25c0 .138.112.25.25.25h2.688l-.011-.013-2.914-2.914-.013-.011Z"/></svg>Markdown</span>
-    <span><svg viewBox="0 0 16 16"><path d="M5.75 7.5a.75.75 0 0 1 .75.75v1.5a.75.75 0 0 1-1.5 0v-1.5a.75.75 0 0 1 .75-.75Zm5.25.75a.75.75 0 0 0-1.5 0v1.5a.75.75 0 0 0 1.5 0v-1.5Z"/><path d="M6.25 0a.75.75 0 0 0 0 1.5H7.5v2H3.75A2.25 2.25 0 0 0 1.5 5.75V8H.75a.75.75 0 0 0 0 1.5h.75v2.75a2.25 2.25 0 0 0 2.25 2.25h8.5a2.25 2.25 0 0 0 2.25-2.25V9.5h.75a.75.75 0 0 0 0-1.5h-.75V5.75A2.25 2.25 0 0 0 12.25 3.5H9V1.5h1.25a.75.75 0 0 0 0-1.5h-4ZM3 5.75A.75.75 0 0 1 3.75 5h8.5a.75.75 0 0 1 .75.75v6.5a.75.75 0 0 1-.75.75h-8.5a.75.75 0 0 1-.75-.75v-6.5Z"/></svg>447 lines</span>
-    <span><svg viewBox="0 0 16 16"><path d="M8 0a8 8 0 1 1 0 16A8 8 0 0 1 8 0ZM1.5 8a6.5 6.5 0 1 0 13 0 6.5 6.5 0 0 0-13 0Zm7-3.25v2.992l2.028.812a.75.75 0 0 1-.557 1.392l-2.5-1A.751.751 0 0 1 7 8.25v-3.5a.75.75 0 0 1 1.5 0Z"/></svg>Feb 26, 2026</span>
-  </div>
-  <button class="dl-btn" id="dlBtn">Download File</button>
-  <p class="done" id="done">Saved to your device</p>
-  <div class="sections">
-    <h2>What's Inside</h2>
-    <ul>
-      <li>Product definition</li>
-      <li>Business model</li>
-      <li>Infrastructure map</li>
-      <li>Storefront details</li>
-      <li>Sales engine API</li>
-      <li>Payment flows</li>
-      <li>OCI provisioner</li>
-      <li>Task dispatcher</li>
-      <li>Content poster</li>
-      <li>Agent identity</li>
-      <li>Database schema</li>
-      <li>Credentials guide</li>
-      <li>Product pipeline</li>
-      <li>Design philosophy</li>
-      <li>Build timeline</li>
-      <li>Next steps</li>
-    </ul>
-  </div>
-  <p class="brand">BROWNING DIGITAL</p>
+<div class="header">
+  <h1>Browning Digital — Downloads</h1>
+  <p>Project files for Claude chat</p>
 </div>
+<div class="cards">
+  <div class="card">
+    <div class="card-header">
+      <div class="card-icon slim">⚡</div>
+      <div>
+        <div class="card-title">Slim Instructions</div>
+        <div class="card-sub">74 lines — ~2K tokens per message</div>
+      </div>
+    </div>
+    <p class="card-desc">Token-optimized project instructions. Has everything Claude needs inline — no startup ceremony, no preemptive fetches. Use this as the project's custom instructions.</p>
+    <div class="tag-row">
+      <span class="tag rec">Recommended</span>
+      <span class="tag">Low token burn</span>
+      <span class="tag">Project instructions</span>
+    </div>
+    <button class="dl-btn slim" onclick="dl('slim')">Download Slim Instructions</button>
+    <p class="done" id="done-slim">Saved</p>
+  </div>
+  <div class="card">
+    <div class="card-header">
+      <div class="card-icon full">📋</div>
+      <div>
+        <div class="card-title">Full Project Bible</div>
+        <div class="card-sub">447 lines — deep reference doc</div>
+      </div>
+    </div>
+    <p class="card-desc">Complete operational document with full payment flows, architecture diagrams, build timeline, agent identity, and every endpoint. Upload as project knowledge (not instructions) so it's searchable but not in every message.</p>
+    <div class="tag-row">
+      <span class="tag">Reference doc</span>
+      <span class="tag">Upload as knowledge</span>
+    </div>
+    <button class="dl-btn full" onclick="dl('full')">Download Full Bible</button>
+    <p class="done" id="done-full">Saved</p>
+  </div>
+</div>
+<p class="brand">BROWNING DIGITAL</p>
 <script>
-const FILE_CONTENT = `# BROWNING DIGITAL — INFO PRODUCT PROJECT BIBLE
+const FILES = {
+  slim: { name: 'INFO-PRODUCT-SLIM.md', content: `# INFO PRODUCT — Project Instructions (Token-Optimized)
+
+## IDENTITY
+You are working with Devin Browning, founder of Browning Digital. Building and selling digital info products through a pure HTML/CSS/JS storefront on Cloudflare.
+
+## WHAT'S LIVE RIGHT NOW
+- **Product:** Zero-Cost AI Infrastructure Kit — \$47 (PayPal, 3x installments, crypto)
+- **Storefront:** shop.browningdigital.com (pure HTML, Cloudflare Pages)
+- **Sales Engine:** browning-sales-engine.devin-b58.workers.dev
+- **Task Dispatcher:** browning-cloud-node-dispatcher.devin-b58.workers.dev
+- **Content Poster:** content-queue-poster.devin-b58.workers.dev (cron */15)
+- **OCI Provisioner:** cron worker, every 1 min, us-chicago-1
+- **Database:** Supabase wcdyvukzlxxkgvxomaxr.supabase.co
+- **Cloudflare account:** b58ddf38aeebb77c0ec4c829ea42adf5
+
+## REPO
+\`Browningdigital/claude-mem\` — the \`cloud-node/\` directory has everything:
+- \`site/\` — pure HTML storefront (LIVE)
+- \`worker/\` — all 4 Cloudflare Workers (sales-engine.ts, task-dispatcher.ts, content-queue-poster.ts, oci-provisioner.ts)
+- \`agent/\` — autonomous agent identity + workflows
+- \`products/\` — product definitions
+- \`scripts/\` — cloud-init, provisioner, setup scripts
+- \`services/\` — systemd unit files
+- \`relay/\` — WebSocket chat relay
+
+## CREDENTIALS — FETCH ON DEMAND ONLY
+Never ask Devin for keys. Only fetch when you actually need them:
+
+1. Try Browning Memory MCP: \`get_credentials("cloudflare")\` (or supabase, github, paypal, coinbase, etc.)
+2. If MCP down, direct query:
+\`\`\`
+POST https://api.supabase.com/v1/projects/wcdyvukzlxxkgvxomaxr/database/query
+Authorization: Bearer sbp_77f3a4025505ccf2e7dfa518913224b79fab3dd1
+{"query": "SELECT state_value FROM claude_system_state WHERE state_key = '<key_name>'"}
+\`\`\`
+
+## DESIGN RULES (NON-NEGOTIABLE)
+- **NEVER** use SvelteKit, React, Next.js, or any framework for storefronts, landing pages, sales funnels, checkout flows, or upsell pages
+- Pure HTML/CSS/JS only. Zero build step. CDN-native. Dark mode default.
+- Bleeding-edge native CSS: scroll-driven animations, View Transitions, @property gradients, container queries
+- Study conversion patterns from: Gumroad, Sellix, Shopify top themes, drop culture brands, Apple product pages
+- Mobile-first. Under 50KB. Sticky bottom CTAs. No component libraries. No loading spinners.
+- Copy hierarchy: headline sells, subhead qualifies, bullets prove, CTA closes
+
+## DATABASE TABLES (reference only — don't query unless needed)
+products, product_sales, cloud_node_tasks, scheduled_tasks, content_queue, golden_nuggets, raw_content, v2_gold_content, rm_ai_learnings, claude_system_state, revenue_daily, provisioner_logs
+
+## SALES ENGINE ENDPOINTS
+POST /api/checkout, POST /api/paypal/capture, POST /webhooks/paypal, POST /webhooks/coinbase, GET /api/products, GET /api/product/<slug>, GET /api/delivery/<id>, GET /api/stats, GET /health
+
+## PRODUCT PIPELINE
+**Live:** Zero-Cost AI Infra Kit (\$47)
+**Ready:** Pro (\$297), Premium DFY (\$997), AI Business Stack (\$47/\$297), Session Continuity (\$497), Golden Nugget System (\$27/\$497), 12th Man QA (\$47/\$197)
+**Upsell:** Order bump → post-purchase upsell → email drip → bundle
+
+## SESSION BEHAVIOR — KEEP IT LEAN
+- Do NOT run a startup sequence. Do NOT call load_full_context unless you specifically need historical context.
+- Do NOT call log_session or log_event unless Devin asks you to track something.
+- Fetch credentials only when a task requires them, not preemptively.
+- Read code files only when you need to modify or reference them.
+- If Devin asks what's deployed or what exists, reference THIS document first before querying anything.
+
+## TECH STACK
+- Workers: TypeScript + Hono + Cloudflare Workers
+- Internal tools only: SvelteKit + Tailwind (admin panels, dashboards — never sales pages)
+- Database: Supabase PostgreSQL with RLS
+- Deploy: \`wrangler deploy\` for Workers, \`wrangler pages deploy\` for Pages
+- Secrets: \`wrangler secret put\` — never hardcode
+
+## WORKER SECRETS REFERENCE
+**Sales Engine** (wrangler-sales.toml): SUPABASE_URL, SUPABASE_KEY, PAYPAL_CLIENT_ID, PAYPAL_SECRET, PAYPAL_MODE, COINBASE_API_KEY, COINBASE_WEBHOOK_SECRET, STORE_URL, WEBHOOK_SECRET
+**Task Dispatcher** (wrangler.toml): SUPABASE_URL, SUPABASE_KEY, TASK_AUTH_TOKEN, ALLOWED_ORIGIN
+**Content Poster** (wrangler-poster.toml): SUPABASE_URL, SUPABASE_KEY, POSTER_AUTH_TOKEN
+**OCI Provisioner** (wrangler-oci.toml): OCI_PRIVATE_KEY, OCI_TENANCY_OCID, OCI_USER_OCID, OCI_FINGERPRINT, OCI_SSH_PUBLIC_KEY, SUPABASE_URL, SUPABASE_KEY
+` },
+  full: { name: 'INFO-PRODUCT-PROJECT.md', content: `# BROWNING DIGITAL — INFO PRODUCT PROJECT BIBLE
 
 **Last Updated:** February 26, 2026
 **Owner:** Devin Browning (devin@browningdigital.com)
@@ -606,21 +616,18 @@ Study and apply: Gumroad (clean, minimal), Sellix (dark mode, exclusive feel), S
 4. Build post-purchase upsell page (Pro at \$297)
 5. Populate content queue with launch posts
 6. Drive first traffic
-`;
-
-document.getElementById('dlBtn').addEventListener('click', function() {
-  const blob = new Blob([FILE_CONTENT], { type: 'text/markdown;charset=utf-8' });
+` }
+};
+function dl(key) {
+  const f = FILES[key];
+  const blob = new Blob([f.content], { type: 'text/markdown;charset=utf-8' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
-  a.href = url;
-  a.download = 'INFO-PRODUCT-PROJECT.md';
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
-  document.getElementById('done').classList.add('show');
-  this.textContent = 'Downloaded';
-});
+  a.href = url; a.download = f.name;
+  document.body.appendChild(a); a.click();
+  document.body.removeChild(a); URL.revokeObjectURL(url);
+  document.getElementById('done-' + key).classList.add('show');
+}
 </script>
 </body>
 </html>
