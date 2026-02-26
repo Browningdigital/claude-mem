@@ -193,7 +193,7 @@ export class ContentIngestService {
     const cacheKey = `raw_content_${limit}_${sourceType || 'all'}`;
     return this.getCached(cacheKey, CACHE_TTL_FEEDS, async () => {
       const whereClause = sourceType
-        ? `WHERE source_type = '${sourceType}'`
+        ? `WHERE source_type = '${sourceType.replace(/'/g, "''")}'`
         : '';
       return this.querySupabase<RawContentItem>(
         `SELECT id, source_type, raw_text, metadata, processing_status, word_count, content_hash, created_at, updated_at
@@ -224,7 +224,7 @@ export class ContentIngestService {
     const cacheKey = `nuggets_${limit}_${stage || 'all'}`;
     return this.getCached(cacheKey, CACHE_TTL_FEEDS, async () => {
       const whereClause = stage
-        ? `WHERE pipeline_stage = '${stage}'`
+        ? `WHERE pipeline_stage = '${stage.replace(/'/g, "''")}'`
         : '';
       return this.querySupabase<GoldenNugget>(
         `SELECT id, nugget_type, category, title, description, detailed_explanation,
@@ -255,7 +255,7 @@ export class ContentIngestService {
     const cacheKey = `queue_${status || 'all'}_${limit}`;
     return this.getCached(cacheKey, CACHE_TTL_QUEUE, async () => {
       const whereClause = status
-        ? `WHERE status = '${status}'`
+        ? `WHERE status = '${status.replace(/'/g, "''")}'`
         : '';
       return this.querySupabase<ContentQueueItem>(
         `SELECT id, platform, content_type, title, body, status, scheduled_for, created_at

@@ -492,14 +492,14 @@ ${o.stack}`:` ${o.message}`:this.getLevel()===0&&typeof o=="object"?l=`
         created_at, created_at_epoch
       ) VALUES (?, ?, ?, ?, ?)
     `).run(e.content_session_id,e.prompt_number,e.prompt_text,e.created_at,e.created_at_epoch).lastInsertRowid}}};var It="https://api.supabase.com/v1/projects/wcdyvukzlxxkgvxomaxr/database/query",Nt="sbp_77f3a4025505ccf2e7dfa518913224b79fab3dd1",N=300*1e3,Lt=60*1e3,P=class{cache=new Map;async querySupabase(e){try{let t=await fetch(It,{method:"POST",headers:{Authorization:`Bearer ${Nt}`,"Content-Type":"application/json"},body:JSON.stringify({query:e})});if(!t.ok){let r=await t.text();throw new Error(`Supabase API error (${t.status}): ${r}`)}return await t.json()}catch(t){throw u.error("CONTENT","Supabase query failed",{sql:e.substring(0,100)},t),t}}async getCached(e,t,s){let r=this.cache.get(e);if(r&&Date.now()-r.timestamp<t)return r.data;let o=await s();return this.cache.set(e,{data:o,timestamp:Date.now()}),o}clearCache(){this.cache.clear()}async getScraperConfigs(){return this.getCached("scraper_configs",N,async()=>this.querySupabase(`SELECT id, name, status, config, last_run, items_collected, error_count, created_at
-         FROM scraper_configs ORDER BY name`))}async getRSSFeedConfig(){return(await this.getScraperConfigs()).find(t=>t.id==="rss")||null}async getRecentContent(e=20,t){let s=`raw_content_${e}_${t||"all"}`;return this.getCached(s,N,async()=>{let r=t?`WHERE source_type = '${t}'`:"";return this.querySupabase(`SELECT id, source_type, raw_text, metadata, processing_status, word_count, content_hash, created_at, updated_at
+         FROM scraper_configs ORDER BY name`))}async getRSSFeedConfig(){return(await this.getScraperConfigs()).find(t=>t.id==="rss")||null}async getRecentContent(e=20,t){let s=`raw_content_${e}_${t||"all"}`;return this.getCached(s,N,async()=>{let r=t?`WHERE source_type = '${t.replace(/'/g,"''")}'`:"";return this.querySupabase(`SELECT id, source_type, raw_text, metadata, processing_status, word_count, content_hash, created_at, updated_at
          FROM raw_content ${r}
          ORDER BY created_at DESC LIMIT ${e}`)})}async searchContent(e,t=10){let s=e.replace(/'/g,"''");return this.querySupabase(`SELECT id, source_type, raw_text, metadata, processing_status, word_count, content_hash, created_at, updated_at
        FROM raw_content
        WHERE raw_text ILIKE '%${s}%'
           OR metadata->>'title' ILIKE '%${s}%'
           OR metadata->>'source' ILIKE '%${s}%'
-       ORDER BY created_at DESC LIMIT ${t}`)}async getGoldenNuggets(e=20,t){let s=`nuggets_${e}_${t||"all"}`;return this.getCached(s,N,async()=>{let r=t?`WHERE pipeline_stage = '${t}'`:"";return this.querySupabase(`SELECT id, nugget_type, category, title, description, detailed_explanation,
+       ORDER BY created_at DESC LIMIT ${t}`)}async getGoldenNuggets(e=20,t){let s=`nuggets_${e}_${t||"all"}`;return this.getCached(s,N,async()=>{let r=t?`WHERE pipeline_stage = '${t.replace(/'/g,"''")}'`:"";return this.querySupabase(`SELECT id, nugget_type, category, title, description, detailed_explanation,
                 priority, pipeline_stage, status, created_at
          FROM golden_nuggets ${r}
          ORDER BY COALESCE(priority, 0) DESC, created_at DESC LIMIT ${e}`)})}async searchNuggets(e,t=10){let s=e.replace(/'/g,"''");return this.querySupabase(`SELECT id, nugget_type, category, title, description, detailed_explanation,
@@ -507,7 +507,7 @@ ${o.stack}`:` ${o.message}`:this.getLevel()===0&&typeof o=="object"?l=`
        FROM golden_nuggets
        WHERE title ILIKE '%${s}%'
           OR description ILIKE '%${s}%'
-       ORDER BY COALESCE(priority, 0) DESC, created_at DESC LIMIT ${t}`)}async getContentQueue(e,t=20){let s=`queue_${e||"all"}_${t}`;return this.getCached(s,Lt,async()=>{let r=e?`WHERE status = '${e}'`:"";return this.querySupabase(`SELECT id, platform, content_type, title, body, status, scheduled_for, created_at
+       ORDER BY COALESCE(priority, 0) DESC, created_at DESC LIMIT ${t}`)}async getContentQueue(e,t=20){let s=`queue_${e||"all"}_${t}`;return this.getCached(s,Lt,async()=>{let r=e?`WHERE status = '${e.replace(/'/g,"''")}'`:"";return this.querySupabase(`SELECT id, platform, content_type, title, body, status, scheduled_for, created_at
          FROM content_queue ${r}
          ORDER BY COALESCE(scheduled_for, created_at) ASC LIMIT ${t}`)})}async getContentLibrary(e=20){return this.getCached(`library_${e}`,N,async()=>this.querySupabase(`SELECT id, content_type, title, slug, content, description, status, created_at
          FROM content_library

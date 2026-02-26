@@ -52,38 +52,55 @@ The content appears in your pipeline — accessible via `content_feed` MCP tool,
    Body: "[Get Dictionary Value: title from Step 3] — [Get Dictionary Value: link from Step 3]"
 ```
 
-### Alternative: Simple One-Step Shortcut
+### Alternative: Simple One-Step via claude-mem Share Endpoint
 
-If you just want the quickest possible setup:
+The claude-mem worker now includes a `/api/content/share` endpoint with built-in social media extraction. This is the recommended approach — it handles platform detection, oEmbed/embed page extraction, and Jina fallback automatically:
 
 ```
 1. [Receive] Share Sheet Input → URL
 
 2. [Web] Get Contents of URL
-   URL: https://content-extractor.devin-b58.workers.dev/api/extract?url=[Share Sheet Input]
+   URL: http://<claude-mem-host>:37777/api/content/share?url=[Share Sheet Input]&source=ios-shortcut
+   Method: GET
 
-3. [Notification] Show Notification: "Content extracted!"
+3. [Notification] Show Notification
+   Title: "Saved to Browning"
+   Body: "[Get Dictionary Value: title from Step 2]"
 ```
 
 ## Endpoints
 
 | Endpoint | Method | Purpose |
 |----------|--------|---------|
-| `/api/extract?url=<URL>` | GET | Extract content from any URL |
-| `/api/upload-url` | POST | Store extracted content with metadata |
-| `/api/upload` | POST | Upload a file (multipart form data) |
-| `/c/<id>` | GET | Retrieve stored content by ID |
+| `/api/content/share` | POST/GET | Share a URL (auto-detects social platforms, extracts, stores) |
+| `/api/content/feed` | GET | Full content feed summary |
+| `/api/content/digest` | GET | Formatted digest for context injection |
+| `/api/content/search?query=...` | GET | Search raw content and nuggets |
+| `/api/extract?url=<URL>` | GET | Extract content from any URL (content-extractor worker) |
+| `/api/upload-url` | POST | Store extracted content with metadata (content-extractor worker) |
+
+## Social Media Extraction
+
+Social URLs are automatically detected and extracted using free, auth-free methods before falling back to Jina:
+
+| Platform | Method | Auth Required |
+|----------|--------|---------------|
+| **Twitter/X** | fxtwitter API + oEmbed | No |
+| **YouTube** | oEmbed + noembed fallback | No |
+| **TikTok** | oEmbed | No |
+| **Reddit** | JSON API (.json suffix) | No |
+| **Instagram** | Embed page scraping + ddinstagram | No |
+| **Facebook** | Embed plugin page + mobile og:tags | No |
+| **Threads** | Embed page scraping | No |
+| **LinkedIn** | og:meta via Googlebot UA | No |
+
+Short URL resolution (fb.watch, redd.it, instagr.am, vm.tiktok.com) is handled automatically.
 
 ## Supported Content Types
 
-The content extractor handles:
-- **Articles/blogs** — Full text extraction via Jina reader
-- **YouTube videos** — Title, description, transcript extraction
-- **Twitter/X posts** — Tweet text and metadata
-- **TikTok videos** — Description and metadata
-- **Instagram posts** — Caption and metadata
-- **LinkedIn posts** — Post content extraction
-- **Threads posts** — OG meta extraction
+The content pipeline handles:
+- **Social media posts** — Automatic platform detection + free API extraction (see table above)
+- **Articles/blogs** — Full text extraction via Jina reader (fallback for non-social URLs)
 - **PDFs** — Full text extraction via Cloudflare AI
 - **Images** — OCR via Cloudflare AI
 
