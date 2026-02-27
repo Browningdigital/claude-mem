@@ -7,6 +7,7 @@
  * Supported platforms:
  *   - Twitter/X (OAuth 1.0a — proper HMAC-SHA1 signature)
  *   - LinkedIn (Community Management API v2 — /rest/posts)
+ *   - Threads (Meta Graph API — two-step container + publish)
  *
  * Runs on a cron trigger every 15 minutes.
  * Each run processes up to 5 queued items.
@@ -14,6 +15,7 @@
  * Credentials stored in Supabase claude_system_state:
  *   - twitter_credentials: { api_key, api_secret, access_token, access_secret }
  *   - linkedin_credentials: { access_token, person_urn }
+ *   - threads_credentials: { app_id, app_secret, user_access_token, threads_user_id }
  *
  * Deploy: cd cloud-node/worker && wrangler deploy -c wrangler-poster.toml
  * Secrets: SUPABASE_URL, SUPABASE_KEY, POSTER_AUTH_TOKEN
@@ -58,9 +60,17 @@ interface LinkedInCreds {
   person_urn: string;  // e.g., "urn:li:person:abc123"
 }
 
+interface ThreadsCreds {
+  app_id: string;
+  app_secret: string;
+  user_access_token: string;
+  threads_user_id: string;
+}
+
 interface PlatformCredentials {
   twitter?: TwitterCreds;
   linkedin?: LinkedInCreds;
+  threads?: ThreadsCreds;
 }
 
 export default {
@@ -132,6 +142,9 @@ async function processQueue(env: Env): Promise<{ processed: number; results: any
         case 'linkedin':
           postResult = await postToLinkedIn(item, creds.linkedin);
           break;
+        case 'threads':
+          postResult = await postToThreads(item, creds.threads);
+          break;
         default:
           postResult = { success: false, error: `Unsupported platform: ${item.platform}` };
       }
@@ -146,6 +159,9 @@ async function processQueue(env: Env): Promise<{ processed: number; results: any
             break;
           case 'linkedin':
             postResult = await postToLinkedIn(item, creds.linkedin);
+            break;
+          case 'threads':
+            postResult = await postToThreads(item, creds.threads);
             break;
         }
       }
@@ -414,6 +430,100 @@ function formatForLinkedIn(item: QueueItem): string {
   return text;
 }
 
+// ══════════════════════════════════════
+// THREADS — Meta Graph API (two-step publish)
+// ══════════════════════════════════════
+
+async function postToThreads(item: QueueItem, creds?: ThreadsCreds): Promise<PostResult> {
+  if (!creds?.user_access_token || !creds?.threads_user_id) {
+    return {
+      success: false,
+      error: 'Threads credentials incomplete. Need user_access_token and threads_user_id in claude_system_state threads_credentials.',
+    };
+  }
+
+  const text = formatForThreads(item);
+
+  // Step 1: Create media container
+  const containerParams = new URLSearchParams({
+    media_type: 'TEXT',
+    text,
+    access_token: creds.user_access_token,
+  });
+
+  const containerRes = await fetch(
+    `https://graph.threads.net/v1.0/${creds.threads_user_id}/threads?${containerParams}`,
+    { method: 'POST' },
+  );
+
+  if (!containerRes.ok) {
+    const err = await containerRes.text();
+    if (containerRes.status === 401 || containerRes.status === 190) {
+      return {
+        success: false,
+        error: `Threads auth failed. Token may be expired (60-day long-lived). Refresh in claude_system_state. Error: ${err.substring(0, 200)}`,
+      };
+    }
+    if (containerRes.status === 429) {
+      return { success: false, error: `Threads rate limit hit. Retry later. ${err.substring(0, 100)}` };
+    }
+    return { success: false, error: `Threads container creation failed ${containerRes.status}: ${err.substring(0, 200)}` };
+  }
+
+  const containerData: any = await containerRes.json();
+  const creationId = containerData.id;
+
+  if (!creationId) {
+    return { success: false, error: `Threads container created but no ID returned: ${JSON.stringify(containerData).substring(0, 200)}` };
+  }
+
+  // Step 2: Publish the container
+  const publishParams = new URLSearchParams({
+    creation_id: creationId,
+    access_token: creds.user_access_token,
+  });
+
+  const publishRes = await fetch(
+    `https://graph.threads.net/v1.0/${creds.threads_user_id}/threads_publish?${publishParams}`,
+    { method: 'POST' },
+  );
+
+  if (!publishRes.ok) {
+    const err = await publishRes.text();
+    return { success: false, error: `Threads publish failed ${publishRes.status}: ${err.substring(0, 200)}` };
+  }
+
+  const publishData: any = await publishRes.json();
+  const threadId = publishData.id;
+
+  return {
+    success: true,
+    post_id: threadId,
+    url: threadId ? `https://www.threads.net/post/${threadId}` : undefined,
+  };
+}
+
+function formatForThreads(item: QueueItem): string {
+  let text = '';
+
+  if (item.title) {
+    text = `${item.title}\n\n`;
+  }
+  text += item.body;
+
+  if (item.hashtags?.length) {
+    const hashtagStr = item.hashtags.map(h => h.startsWith('#') ? h : `#${h}`).join(' ');
+    text += `\n\n${hashtagStr}`;
+  }
+
+  // Threads limit is 500 characters
+  if (text.length > 500) {
+    text = text.substring(0, 497) + '...';
+  }
+
+  return text;
+}
+
 // ── Credential loading ──
 
 async function loadCredentials(env: Env): Promise<PlatformCredentials> {
@@ -443,6 +553,18 @@ async function loadCredentials(env: Env): Promise<PlatformCredentials> {
     console.error(`Failed to load LinkedIn credentials: ${err.message}`);
   }
 
+  try {
+    const threadsRows = await supabaseQuery(env, 'claude_system_state',
+      "state_key=eq.threads_credentials&select=state_value");
+    if (threadsRows.length && threadsRows[0].state_value) {
+      creds.threads = typeof threadsRows[0].state_value === 'string'
+        ? JSON.parse(threadsRows[0].state_value)
+        : threadsRows[0].state_value;
+    }
+  } catch (err: any) {
+    console.error(`Failed to load Threads credentials: ${err.message}`);
+  }
+
   return creds;
 }
 
@@ -464,6 +586,7 @@ async function getQueueStats(env: Env): Promise<any> {
     platforms_configured: {
       twitter: !!creds.twitter?.api_key,
       linkedin: !!creds.linkedin?.access_token,
+      threads: !!creds.threads?.user_access_token,
     },
   };
 }
