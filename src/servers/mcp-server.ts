@@ -310,6 +310,86 @@ NEVER fetch full details without filtering first. 10x token savings.`,
 
       return await callWorkerAPI(endpoint, params);
     }
+  },
+  {
+    name: 'content_orchestrate',
+    description: 'Oracle COO/CMO agent control surface for the content pipeline. Actions: "dashboard" (full pipeline status + top content + queue), "scrape" (trigger content scraping), "opportunities" (scored gold/silver content for decision-making), "promote" (promote content to post queue), "config" (update scraper targets)',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        action: {
+          type: 'string',
+          description: 'Action: dashboard, scrape, opportunities, promote, config',
+          enum: ['dashboard', 'scrape', 'opportunities', 'promote', 'config']
+        },
+        type: {
+          type: 'string',
+          description: 'Scraper type for action=scrape (rss, threads, twitter, reddit). Omit for all.'
+        },
+        content_id: {
+          type: 'string',
+          description: 'Content ID for action=promote'
+        },
+        platform: {
+          type: 'string',
+          description: 'Target platform for action=promote (twitter, linkedin)'
+        },
+        post_body: {
+          type: 'string',
+          description: 'Post body text for action=promote'
+        },
+        scraper_id: {
+          type: 'string',
+          description: 'Scraper ID for action=config (threads, twitter, reddit, rss)'
+        },
+        updates: {
+          type: 'object',
+          description: 'Config updates for action=config: { accounts?: string[], search_terms?: string[] }'
+        }
+      },
+      required: ['action']
+    },
+    handler: async (args: any) => {
+      const { action, type, content_id, platform, post_body, scraper_id, updates } = args;
+
+      const actionMap: Record<string, { method: string; endpoint: string; body?: any }> = {
+        'dashboard': { method: 'GET', endpoint: '/api/oracle/dashboard' },
+        'scrape': { method: 'POST', endpoint: type ? `/api/content/scrape/${type}` : '/api/content/scrape' },
+        'opportunities': { method: 'GET', endpoint: '/api/oracle/opportunities' },
+        'promote': { method: 'POST', endpoint: '/api/oracle/promote', body: { content_id, platform, post_body } },
+        'config': { method: 'POST', endpoint: '/api/oracle/config', body: { scraper_id, updates } },
+      };
+
+      const spec = actionMap[action];
+      if (!spec) {
+        return {
+          content: [{ type: 'text' as const, text: `Unknown action: ${action}. Valid: ${Object.keys(actionMap).join(', ')}` }],
+          isError: true
+        };
+      }
+
+      if (spec.method === 'GET') {
+        return await callWorkerAPI(spec.endpoint, {});
+      }
+
+      // POST requests
+      try {
+        const url = `${WORKER_BASE_URL}${spec.endpoint}`;
+        const response = await fetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(spec.body || {})
+        });
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const data = await response.json();
+        return { content: [{ type: 'text' as const, text: JSON.stringify(data, null, 2) }] };
+      } catch (error) {
+        return {
+          content: [{ type: 'text' as const, text: `Error: ${error instanceof Error ? error.message : String(error)}` }],
+          isError: true
+        };
+      }
+    }
   }
 ];
 

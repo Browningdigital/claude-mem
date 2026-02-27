@@ -561,122 +561,13 @@ async function extractInstagram(url: string): Promise<SocialExtractionResult | n
 }
 
 /**
- * Facebook — embed plugin page + mobile og:tags.
- * The embed plugin endpoint is public and renders post text.
+ * Facebook — DISABLED.
+ * Meta blocks all unauthenticated scraping methods (embed plugin returns 403,
+ * mobile og:tags stripped, CSS class selectors break on every update).
+ * No public API exists. Returns null immediately so caller falls back to Jina.
  */
-async function extractFacebook(url: string): Promise<SocialExtractionResult | null> {
-  // Resolve fb.watch and fb.com short URLs to full facebook.com URLs first
-  let resolvedUrl = url;
-  if (/fb\.watch\//i.test(url) || /fb\.com\//i.test(url)) {
-    resolvedUrl = await resolveShortUrl(url);
-    logger.debug('CONTENT', `Resolved Facebook short URL: ${url} → ${resolvedUrl}`);
-  }
-
-  const isVideo = /\/videos\/|\/watch\/|fb\.watch/i.test(url);
-
-  // Method 1: Facebook embed plugin page (public)
-  try {
-    const embedUrl = `https://www.facebook.com/plugins/post.php?href=${encodeURIComponent(resolvedUrl)}&show_text=true&width=500`;
-    const res = await safeFetch(embedUrl, {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        'Accept': 'text/html,application/xhtml+xml',
-        'Accept-Language': 'en-US,en;q=0.9',
-      }
-    });
-
-    if (res?.ok) {
-      const html = await res.text();
-      const textChunks: string[] = [];
-
-      // Facebook embed pages contain post text in specific class patterns
-      const storyMatches = html.match(/<div[^>]*class="[^"]*_5pbx[^"]*"[^>]*>([\s\S]*?)<\/div>/gi);
-      if (storyMatches) {
-        for (const match of storyMatches) {
-          const text = stripHtml(match);
-          if (text) textChunks.push(text);
-        }
-      }
-
-      const userContentMatches = html.match(/<div[^>]*class="[^"]*userContent[^"]*"[^>]*>([\s\S]*?)<\/div>/gi);
-      if (userContentMatches) {
-        for (const match of userContentMatches) {
-          const text = stripHtml(match);
-          if (text) textChunks.push(text);
-        }
-      }
-
-      // Also check for message JSON embedded in the page
-      const jsonMsg = html.match(/"message":\s*\{"text":\s*"([^"]+)"/);
-      if (jsonMsg) {
-        textChunks.push(decodeUnicodeEscapes(jsonMsg[1].replace(/\\n/g, '\n')));
-      }
-
-      const authorMatch = html.match(/<(?:a|span)[^>]*class="[^"]*profileLink[^"]*"[^>]*>([^<]+)/i)
-        || html.match(/"name":\s*"([^"]+)"/);
-
-      const content = textChunks.join('\n\n').trim();
-      const author = authorMatch?.[1] || '';
-
-      if (content || author) {
-        return {
-          title: author ? `${author} on Facebook` : 'Facebook Post',
-          content: content || `Facebook ${isVideo ? 'video' : 'post'} by ${author || 'unknown'}`,
-          content_type: isVideo ? 'social_video' : 'social_post',
-          platform: 'facebook',
-          metadata: {
-            author: author || undefined,
-            original_url: url,
-            extraction_method: 'facebook_embed',
-            platform: 'facebook',
-          }
-        };
-      }
-    }
-  } catch (e) {
-    logger.debug('CONTENT', 'Facebook embed extraction failed', {}, e as Error);
-  }
-
-  // Method 2: Mobile Facebook (simpler HTML, og:tags)
-  try {
-    const mobileUrl = resolvedUrl.replace(/(?:www\.|m\.|web\.)?facebook\.com/, 'm.facebook.com');
-    const res = await safeFetch(mobileUrl, {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1',
-        'Accept': 'text/html',
-        'Accept-Language': 'en-US,en;q=0.9',
-      },
-    });
-
-    if (res?.ok) {
-      const html = await res.text();
-
-      const ogDesc = html.match(/<meta\s+(?:property|name)="og:description"\s+content="([^"]*?)"/i)
-        || html.match(/content="([^"]*?)"\s+(?:property|name)="og:description"/i);
-      const ogTitle = html.match(/<meta\s+(?:property|name)="og:title"\s+content="([^"]*?)"/i)
-        || html.match(/content="([^"]*?)"\s+(?:property|name)="og:title"/i);
-      const ogImage = html.match(/<meta\s+(?:property|name)="og:image"\s+content="([^"]*?)"/i)
-        || html.match(/content="([^"]*?)"\s+(?:property|name)="og:image"/i);
-
-      if (ogDesc || ogTitle) {
-        return {
-          title: decodeHtmlEntities(ogTitle?.[1] || 'Facebook Post'),
-          content: decodeHtmlEntities(ogDesc?.[1] || ogTitle?.[1] || ''),
-          content_type: isVideo ? 'social_video' : 'social_post',
-          platform: 'facebook',
-          metadata: {
-            thumbnail_url: ogImage?.[1],
-            original_url: url,
-            extraction_method: 'facebook_mobile',
-            platform: 'facebook',
-          }
-        };
-      }
-    }
-  } catch (e) {
-    logger.debug('CONTENT', 'Facebook mobile fallback failed', {}, e as Error);
-  }
-
+async function extractFacebook(_url: string): Promise<SocialExtractionResult | null> {
+  logger.info('CONTENT', 'Facebook extraction disabled — Meta blocks unauthenticated access. Falling back to Jina.');
   return null;
 }
 

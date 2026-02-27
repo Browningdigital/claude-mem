@@ -20,6 +20,7 @@
 import express, { Request, Response } from 'express';
 import { BaseRouteHandler } from '../BaseRouteHandler.js';
 import { ContentIngestService } from '../../ContentIngestService.js';
+import { ContentScraperService } from '../../ContentScraperService.js';
 import { extractSocialContent, detectPlatform } from '../../SocialMediaExtractor.js';
 import { logger } from '../../../../utils/logger.js';
 
@@ -27,10 +28,13 @@ const CONTENT_INGEST_HEALTH_URL = 'https://content-ingest.devin-b58.workers.dev/
 const CONTENT_EXTRACTOR_BASE = 'https://content-extractor.devin-b58.workers.dev';
 
 export class ContentRoutes extends BaseRouteHandler {
+  private scraperService: ContentScraperService;
+
   constructor(
     private contentService: ContentIngestService
   ) {
     super();
+    this.scraperService = new ContentScraperService();
   }
 
   setupRoutes(app: express.Application): void {
@@ -49,6 +53,18 @@ export class ContentRoutes extends BaseRouteHandler {
     // Share endpoint (iOS Share Sheet / mobile-first)
     app.post('/api/content/share', this.handleShare.bind(this));
     app.get('/api/content/share', this.handleShareGet.bind(this));
+
+    // Scraper trigger endpoints
+    app.post('/api/content/scrape', this.handleScrapeAll.bind(this));
+    app.post('/api/content/scrape/:type', this.handleScrapeSingle.bind(this));
+    app.get('/api/content/scraper-status', this.handleScraperStatus.bind(this));
+
+    // Oracle COO/CMO agent endpoints
+    app.get('/api/oracle/dashboard', this.handleOracleDashboard.bind(this));
+    app.post('/api/oracle/scrape', this.handleOracleScrape.bind(this));
+    app.get('/api/oracle/opportunities', this.handleOracleOpportunities.bind(this));
+    app.post('/api/oracle/promote', this.handleOraclePromote.bind(this));
+    app.post('/api/oracle/config', this.handleOracleConfig.bind(this));
   }
 
   /**
@@ -319,5 +335,213 @@ export class ContentRoutes extends BaseRouteHandler {
     // Delegate to POST handler logic
     req.body = { url, title, source };
     await this.handleShare(req, res);
+  });
+
+  // ============================================================================
+  // Scraper Trigger Endpoints
+  // ============================================================================
+
+  /**
+   * POST /api/content/scrape — Trigger full scrape across all active configs
+   */
+  private handleScrapeAll = this.wrapHandler(async (_req: Request, res: Response): Promise<void> => {
+    logger.info('CONTENT', 'Full scrape triggered');
+    const results = await this.scraperService.runAll();
+    this.contentService.clearCache();
+    res.json({ success: true, results });
+  });
+
+  /**
+   * POST /api/content/scrape/:type — Trigger a specific scraper (rss, threads, twitter, reddit)
+   */
+  private handleScrapeSingle = this.wrapHandler(async (req: Request, res: Response): Promise<void> => {
+    const type = req.params.type;
+    logger.info('CONTENT', `Single scrape triggered: ${type}`);
+    const result = await this.scraperService.runSingle(type);
+    this.contentService.clearCache();
+    res.json({ success: true, result });
+  });
+
+  /**
+   * GET /api/content/scraper-status — All scraper configs with last_run + items_collected
+   */
+  private handleScraperStatus = this.wrapHandler(async (_req: Request, res: Response): Promise<void> => {
+    const configs = await this.contentService.getScraperConfigs();
+    res.json({
+      configs: configs.map(c => ({
+        id: c.id,
+        name: c.name,
+        status: c.status,
+        last_run: c.last_run,
+        items_collected: c.items_collected,
+        error_count: c.error_count,
+      })),
+      count: configs.length
+    });
+  });
+
+  // ============================================================================
+  // Oracle COO/CMO Agent Endpoints
+  // ============================================================================
+
+  /**
+   * GET /api/oracle/dashboard — Full pipeline status for oracle agent decision-making
+   */
+  private handleOracleDashboard = this.wrapHandler(async (_req: Request, res: Response): Promise<void> => {
+    const [stats, scraperConfigs, recentGold, queue, nuggets] = await Promise.all([
+      this.contentService.getPipelineStats(),
+      this.contentService.getScraperConfigs(),
+      this.contentService.getRecentContent(20, undefined),
+      this.contentService.getContentQueue('queued', 10),
+      this.contentService.getGoldenNuggets(10),
+    ]);
+
+    // Filter to gold/silver tier content
+    const goldContent = recentGold.filter(c => {
+      const tier = (c.metadata as any)?.score_tier;
+      return tier === 'gold' || tier === 'silver';
+    });
+
+    res.json({
+      pipeline_stats: stats,
+      scraper_status: scraperConfigs.map(c => ({
+        id: c.id, name: c.name, status: c.status,
+        last_run: c.last_run, items_collected: c.items_collected, error_count: c.error_count
+      })),
+      top_content: goldContent.slice(0, 10).map(c => ({
+        id: c.id, source_type: c.source_type,
+        title: (c.metadata as any)?.title,
+        score: (c.metadata as any)?.score,
+        tier: (c.metadata as any)?.score_tier,
+        pillars: (c.metadata as any)?.pillar_tags,
+        opportunity: (c.metadata as any)?.product_opportunity,
+        created_at: c.created_at,
+      })),
+      queued_posts: queue,
+      recent_nuggets: nuggets.slice(0, 5),
+      timestamp: new Date().toISOString()
+    });
+  });
+
+  /**
+   * POST /api/oracle/scrape — Oracle-triggered scrape with optional targeting
+   * Body: { type?: string, priority?: 'high'|'normal', terms?: string[] }
+   */
+  private handleOracleScrape = this.wrapHandler(async (req: Request, res: Response): Promise<void> => {
+    const { type } = req.body;
+    logger.info('CONTENT', 'Oracle scrape triggered', { type });
+
+    if (type) {
+      const result = await this.scraperService.runSingle(type);
+      this.contentService.clearCache();
+      res.json({ success: true, result });
+    } else {
+      const results = await this.scraperService.runAll();
+      this.contentService.clearCache();
+      res.json({ success: true, results });
+    }
+  });
+
+  /**
+   * GET /api/oracle/opportunities — Scored opportunities for oracle decision-making
+   * Returns gold/silver tier content with pain signals and buying intent
+   */
+  private handleOracleOpportunities = this.wrapHandler(async (_req: Request, res: Response): Promise<void> => {
+    const content = await this.contentService.getRecentContent(50);
+    const opportunities = content
+      .filter(c => {
+        const meta = c.metadata as any;
+        return meta?.score_tier === 'gold' || meta?.score_tier === 'silver';
+      })
+      .map(c => {
+        const meta = c.metadata as any;
+        return {
+          id: c.id,
+          title: meta?.title,
+          url: meta?.url,
+          score: meta?.score,
+          tier: meta?.score_tier,
+          pillars: meta?.pillar_tags,
+          pain_signals: meta?.pain_signals,
+          opportunity: meta?.product_opportunity,
+          has_buying_intent: meta?.has_buying_intent,
+          source_type: c.source_type,
+          word_count: c.word_count,
+          created_at: c.created_at,
+        };
+      })
+      .sort((a, b) => (b.score || 0) - (a.score || 0));
+
+    res.json({ opportunities, count: opportunities.length });
+  });
+
+  /**
+   * POST /api/oracle/promote — Promote a raw_content item or nugget to content_queue
+   * Body: { content_id: string, platform: string, post_body?: string, scheduled_for?: string }
+   */
+  private handleOraclePromote = this.wrapHandler(async (req: Request, res: Response): Promise<void> => {
+    const { content_id, platform, post_body, scheduled_for } = req.body;
+    if (!content_id || !platform) {
+      this.badRequest(res, 'content_id and platform are required');
+      return;
+    }
+
+    // This inserts directly via SQL since ContentIngestService doesn't have a queue insert method
+    const MGMT_API_URL = 'https://api.supabase.com/v1/projects/wcdyvukzlxxkgvxomaxr/database/query';
+    const MGMT_API_KEY = 'sbp_77f3a4025505ccf2e7dfa518913224b79fab3dd1';
+
+    const body = (post_body || '').replace(/'/g, "''");
+    const scheduled = scheduled_for ? `'${scheduled_for}'` : 'NULL';
+
+    const response = await fetch(MGMT_API_URL, {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${MGMT_API_KEY}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        query: `INSERT INTO content_queue (platform, body, status, scheduled_for, metadata) VALUES ('${platform.replace(/'/g, "''")}', '${body}', 'queued', ${scheduled}, '{"promoted_from": "${content_id}", "promoted_by": "oracle"}'::jsonb) RETURNING id`
+      })
+    });
+
+    const result = await response.json();
+    logger.info('CONTENT', 'Oracle promoted content to queue', { content_id, platform });
+    res.json({ success: true, queued: result });
+  });
+
+  /**
+   * POST /api/oracle/config — Update scraper config dynamically
+   * Body: { scraper_id: string, updates: { accounts?: string[], search_terms?: string[] } }
+   */
+  private handleOracleConfig = this.wrapHandler(async (req: Request, res: Response): Promise<void> => {
+    const { scraper_id, updates } = req.body;
+    if (!scraper_id || !updates) {
+      this.badRequest(res, 'scraper_id and updates are required');
+      return;
+    }
+
+    const MGMT_API_URL = 'https://api.supabase.com/v1/projects/wcdyvukzlxxkgvxomaxr/database/query';
+    const MGMT_API_KEY = 'sbp_77f3a4025505ccf2e7dfa518913224b79fab3dd1';
+
+    const setClauses: string[] = [];
+    if (updates.accounts) {
+      setClauses.push(`config = jsonb_set(config, '{accounts}', '${JSON.stringify(updates.accounts).replace(/'/g, "''")}'::jsonb)`);
+    }
+    if (updates.search_terms) {
+      setClauses.push(`config = jsonb_set(config, '{search_terms}', '${JSON.stringify(updates.search_terms).replace(/'/g, "''")}'::jsonb)`);
+    }
+
+    if (setClauses.length === 0) {
+      this.badRequest(res, 'No valid updates provided (accounts or search_terms)');
+      return;
+    }
+
+    await fetch(MGMT_API_URL, {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${MGMT_API_KEY}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        query: `UPDATE scraper_configs SET ${setClauses.join(', ')} WHERE id = '${scraper_id.replace(/'/g, "''")}'`
+      })
+    });
+
+    logger.info('CONTENT', 'Oracle updated scraper config', { scraper_id, updates: Object.keys(updates) });
+    res.json({ success: true, scraper_id, updated: Object.keys(updates) });
   });
 }
