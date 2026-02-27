@@ -165,8 +165,23 @@ app.get("/api/info", (c) =>
   })
 );
 
-// Health check
-app.get("/api/ping", (c) => c.json({ ok: true }));
+// Health check — also verifies claude CLI is reachable
+app.get("/api/ping", async (c) => {
+  let claudeOk = false;
+  let claudeVersion = "";
+  let claudeError = "";
+  try {
+    const { stdout } = await execFileAsync("claude", ["--version"], { timeout: 5000 });
+    claudeOk = true;
+    claudeVersion = stdout.trim();
+  } catch (err: unknown) {
+    claudeError = err instanceof Error ? err.message : "claude CLI not found";
+    if (claudeError.includes("ENOENT")) {
+      claudeError = "Claude Code CLI is not installed. Run: npm install -g @anthropic-ai/claude-code";
+    }
+  }
+  return c.json({ ok: true, claude: claudeOk, claudeVersion, claudeError });
+});
 
 // ===== WebSocket =====
 app.get(
@@ -270,14 +285,22 @@ const server = serve({ fetch: app.fetch, port: PORT }, (info) => {
   console.log(`\n  Claude Chat → http://localhost:${info.port}\n`);
 
   if (process.env.NO_OPEN !== "1") {
-    const open =
-      process.platform === "win32"
-        ? "start"
-        : process.platform === "darwin"
-          ? "open"
-          : "xdg-open";
+    const url = `http://localhost:${info.port}`;
     import("node:child_process").then(({ exec }) => {
-      exec(`${open} http://localhost:${info.port}`);
+      if (process.platform === "win32") {
+        // Try Edge app mode first (always available on Win10/11), fall back to Chrome, then default browser
+        exec(`start msedge --app=${url}`, (err) => {
+          if (err) exec(`start chrome --app=${url}`, (err2) => {
+            if (err2) exec(`start ${url}`);
+          });
+        });
+      } else if (process.platform === "darwin") {
+        exec(`open -a "Google Chrome" --args --app=${url}`, (err) => {
+          if (err) exec(`open ${url}`);
+        });
+      } else {
+        exec(`xdg-open ${url}`);
+      }
     });
   }
 });

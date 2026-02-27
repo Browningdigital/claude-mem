@@ -41,6 +41,29 @@ connect();
 loadSessions(); // always load remote sessions on startup
 renderConversationList();
 updateSend();
+checkHealth();
+
+// ===== Health check — verify claude CLI is available =====
+async function checkHealth() {
+  try {
+    const res = await fetch("/api/ping");
+    const data = await res.json();
+    if (!data.claude) {
+      const banner = document.createElement("div");
+      banner.className = "msg err";
+      banner.style.cssText = "margin:16px;padding:16px;border:1px solid #e53e3e;border-radius:8px;background:#2d1b1b";
+      banner.innerHTML = `
+        <h3 style="margin:0 0 8px;color:#fc8181">Claude Code CLI Not Found</h3>
+        <p style="margin:0 0 8px;color:#feb2b2">${data.claudeError || "The claude command is not available on this machine."}</p>
+        <p style="margin:0;color:#a0aec0;font-size:13px">This app requires Claude Code CLI to work. Install it with:<br>
+        <code style="background:#1a1a2e;padding:4px 8px;border-radius:4px;margin-top:4px;display:inline-block">npm install -g @anthropic-ai/claude-code</code></p>
+      `;
+      messages.prepend(banner);
+      input.placeholder = "Claude CLI not installed — see error above";
+      input.disabled = true;
+    }
+  } catch {}
+}
 
 // ===== WebSocket with aggressive auto-reconnect =====
 function connect() {
