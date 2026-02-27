@@ -5,7 +5,9 @@
  */
 
 import { readFileSync, writeFileSync } from "node:fs";
-import rcedit from "rcedit";
+import { createRequire } from "node:module";
+const require = createRequire(import.meta.url);
+const rcedit = require("rcedit");
 
 const exe = process.argv[2] || "claude-chat.exe";
 const ico = process.argv[3] || "icon.ico";
