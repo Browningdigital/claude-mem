@@ -288,18 +288,12 @@ const server = serve({ fetch: app.fetch, port: PORT }, (info) => {
     const url = `http://localhost:${info.port}`;
     import("node:child_process").then(({ exec }) => {
       if (process.platform === "win32") {
-        // Try Edge app mode first (always available on Win10/11), fall back to Chrome, then default browser
-        exec(`start msedge --app=${url}`, (err) => {
-          if (err) exec(`start chrome --app=${url}`, (err2) => {
-            if (err2) exec(`start ${url}`);
-          });
-        });
+        // "start" on Windows needs empty title arg, then the URL
+        exec(`start "" "${url}"`);
       } else if (process.platform === "darwin") {
-        exec(`open -a "Google Chrome" --args --app=${url}`, (err) => {
-          if (err) exec(`open ${url}`);
-        });
+        exec(`open "${url}"`);
       } else {
-        exec(`xdg-open ${url}`);
+        exec(`xdg-open "${url}"`);
       }
     });
   }
