@@ -1,13 +1,14 @@
 // ===== State =====
 let ws = null;
 let reconnectTimer = null;
+let reconnectDelay = 1000;
 let images = []; // { data, mime, url }
 let streaming = false;
 let currentEl = null;
 let textBuf = "";
 let sessionId = null;
 let conversations = JSON.parse(localStorage.getItem("cc_convos") || "[]");
-let activeConvoIdx = -1;
+let connected = false;
 
 // ===== DOM refs =====
 const $ = (s) => document.querySelector(s);
@@ -38,23 +39,85 @@ connect();
 renderConversationList();
 updateSend();
 
-// ===== WebSocket =====
+// ===== WebSocket with aggressive auto-reconnect =====
 function connect() {
+  if (ws && (ws.readyState === WebSocket.CONNECTING || ws.readyState === WebSocket.OPEN)) return;
+
+  statusText.textContent = "Connecting...";
+  statusDot.classList.remove("connected", "busy");
+
   const proto = location.protocol === "https:" ? "wss:" : "ws:";
-  ws = new WebSocket(`${proto}//${location.host}/ws`);
+  try {
+    ws = new WebSocket(`${proto}//${location.host}/ws`);
+  } catch {
+    scheduleReconnect();
+    return;
+  }
+
   ws.onopen = () => {
+    connected = true;
+    reconnectDelay = 1000;
     statusDot.classList.add("connected");
     statusDot.classList.remove("busy");
     statusText.textContent = "Connected";
     if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
+    // Re-sync session
+    if (sessionId) {
+      ws.send(JSON.stringify({ type: "setSession", sessionId }));
+    }
   };
+
   ws.onclose = () => {
+    connected = false;
     statusDot.classList.remove("connected", "busy");
-    statusText.textContent = "Disconnected";
-    reconnectTimer = setTimeout(connect, 2000);
+    statusText.textContent = "Disconnected — click to reconnect";
+    scheduleReconnect();
   };
-  ws.onmessage = (e) => handleEvent(JSON.parse(e.data));
+
+  ws.onerror = () => {};
+
+  ws.onmessage = (e) => {
+    try { handleEvent(JSON.parse(e.data)); } catch {}
+  };
 }
+
+function scheduleReconnect() {
+  if (reconnectTimer) return;
+  reconnectTimer = setTimeout(() => {
+    reconnectTimer = null;
+    connect();
+  }, reconnectDelay);
+  reconnectDelay = Math.min(reconnectDelay * 2, 30000);
+}
+
+function forceReconnect() {
+  if (connected) return;
+  if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
+  reconnectDelay = 1000;
+  // Close stale socket
+  if (ws) { try { ws.close(); } catch {} ws = null; }
+  statusText.textContent = "Reconnecting...";
+  connect();
+}
+
+// Keep-alive: check every 30s
+setInterval(() => {
+  if (!ws || ws.readyState !== WebSocket.OPEN) {
+    if (!reconnectTimer) connect();
+  }
+}, 30000);
+
+// Reconnect on tab focus
+document.addEventListener("visibilitychange", () => {
+  if (!document.hidden && (!ws || ws.readyState !== WebSocket.OPEN)) {
+    forceReconnect();
+  }
+});
+
+// Also reconnect on window focus (covers alt-tab)
+window.addEventListener("focus", () => {
+  if (!ws || ws.readyState !== WebSocket.OPEN) forceReconnect();
+});
 
 // ===== Event handler =====
 function handleEvent(ev) {
@@ -152,7 +215,6 @@ function renderBubble() {
   const toolsHtml = Array.from(tools).map((t) => t.outerHTML).join("");
 
   let html = marked.parse(textBuf);
-  // Code block headers
   html = html.replace(/<pre><code class="language-(\w+)">/g,
     `<pre><div class="code-head"><span>$1</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div><code class="language-$1">`);
   html = html.replace(/<pre><code>(?!<)/g,
@@ -214,7 +276,6 @@ function sendMessage() {
     sessionId: sessionId || undefined,
   }));
 
-  // Save user message to convo
   saveConvo();
 
   input.value = "";
@@ -244,7 +305,6 @@ document.addEventListener("paste", (e) => {
   }
 });
 
-// Drag & drop on entire main area
 const mainEl = $(".main");
 mainEl.addEventListener("dragover", (e) => { e.preventDefault(); e.currentTarget.style.outline = "2px solid var(--accent)"; });
 mainEl.addEventListener("dragleave", (e) => { e.currentTarget.style.outline = ""; });
@@ -311,9 +371,9 @@ async function loadSessions() {
       return;
     }
     sessionList.innerHTML = list.map((s) => `
-      <div class="session-item${s.id === sessionId ? " active" : ""}" onclick="resumeSession('${s.id}')">
-        <span class="sid">${s.id}</span>
-        <span class="meta">${s.label || ""}</span>
+      <div class="session-item${s.id === sessionId ? " active" : ""}" onclick="resumeSession('${esc(s.id)}')">
+        <span class="sid" title="${esc(s.id)}">${esc(s.label || s.id.slice(0, 16))}</span>
+        <span class="meta">${esc(s.cwd || s.date || "")}</span>
       </div>
     `).join("");
   } catch {
@@ -324,9 +384,7 @@ async function loadSessions() {
 function resumeSession(id) {
   sessionId = id;
   topSession.textContent = id.slice(0, 12) + "...";
-  // Clear messages for the resumed session view
   clearChat();
-  // Tell server
   if (ws?.readyState === WebSocket.OPEN) {
     ws.send(JSON.stringify({ type: "setSession", sessionId: id }));
   }
@@ -357,20 +415,17 @@ function saveConvo() {
   };
   if (idx >= 0) conversations[idx] = entry;
   else conversations.unshift(entry);
-  // Keep last 50
   conversations = conversations.slice(0, 50);
-  try { localStorage.setItem("cc_convos", JSON.stringify(conversations)); } catch { /* quota */ }
+  try { localStorage.setItem("cc_convos", JSON.stringify(conversations)); } catch {}
   renderConversationList();
 }
 
 function renderConversationList() {
-  // Show saved convos in sidebar above remote sessions
   const saved = conversations.slice(0, 20);
   if (!saved.length) {
     loadSessions();
     return;
   }
-  // Render saved + a divider + remote sessions button
   sessionList.innerHTML = saved.map((c) => `
     <div class="session-item${c.id === sessionId ? " active" : ""}" onclick="loadConvo('${c.id}')">
       <span class="sid">${c.label || c.id.slice(0, 12)}</span>
@@ -477,17 +532,11 @@ input.addEventListener("keydown", (e) => {
   }
 });
 
-// Escape to stop
 document.addEventListener("keydown", (e) => {
   if (e.key === "Escape" && streaming) abortMessage();
-});
-
-// Close lightbox on escape
-document.addEventListener("keydown", (e) => {
   if (e.key === "Escape") document.querySelector(".lightbox")?.remove();
 });
 
-// Close sidebar on outside click (mobile)
 document.addEventListener("click", (e) => {
   if (sidebar.classList.contains("open") && !sidebar.contains(e.target) && e.target.id !== "menu-btn") {
     closeSidebar();

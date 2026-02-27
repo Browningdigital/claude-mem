@@ -112,7 +112,10 @@ html, body {
 .connection-status {
   display: flex; align-items: center; gap: 6px;
   font-size: 12px; color: var(--text-3);
+  cursor: pointer; padding: 4px 6px; border-radius: var(--r-sm);
+  transition: background var(--ease);
 }
+.connection-status:hover { background: var(--surface); }
 
 .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--text-3); flex-shrink: 0; }
 .dot.connected { background: #4ade80; }

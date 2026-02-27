@@ -42,7 +42,7 @@
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
           <input id="cwd-input" type="text" placeholder="Working directory..." spellcheck="false">
         </div>
-        <div class="connection-status">
+        <div class="connection-status" id="conn-status" onclick="forceReconnect()" title="Click to reconnect">
           <span class="dot" id="status-dot"></span>
           <span id="status-text">Connecting...</span>
         </div>

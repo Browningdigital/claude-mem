@@ -5,6 +5,9 @@ import { serve } from "@hono/node-server";
 import type { WSContext } from "hono/ws";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
+import { readdir, readFile } from "node:fs/promises";
+import { join } from "node:path";
+import { homedir } from "node:os";
 import { ClaudeBridge } from "./claude-bridge.js";
 
 const execFileAsync = promisify(execFile);
@@ -14,45 +17,104 @@ const { injectWebSocket, upgradeWebSocket } = createNodeWebSocket({ app });
 
 const bridges = new Map<WSContext, ClaudeBridge>();
 
+// ===== Session scanning =====
+
+interface SessionInfo {
+  id: string;
+  label: string;
+  date: string;
+  cwd: string;
+}
+
+async function scanSessionFiles(): Promise<SessionInfo[]> {
+  const sessions: SessionInfo[] = [];
+  const claudeDir = join(homedir(), ".claude", "projects");
+
+  try {
+    const projects = await readdir(claudeDir);
+    for (const project of projects) {
+      const projectDir = join(claudeDir, project);
+      let files: string[];
+      try {
+        files = await readdir(projectDir);
+      } catch {
+        continue;
+      }
+
+      const jsonlFiles = files.filter((f) => f.endsWith(".jsonl"));
+
+      for (const file of jsonlFiles) {
+        try {
+          const filePath = join(projectDir, file);
+          const content = await readFile(filePath, "utf-8");
+          const firstLine = content.split("\n")[0];
+          if (!firstLine) continue;
+
+          const entry = JSON.parse(firstLine);
+          const sessionId = entry.sessionId || file.replace(".jsonl", "");
+          const cwd = entry.cwd || project.replace(/-/g, "/");
+          const date = entry.timestamp || "";
+          const label =
+            entry.slug ||
+            cwd.split("/").pop() ||
+            sessionId.slice(0, 8);
+
+          sessions.push({ id: sessionId, label, date, cwd });
+        } catch {
+          // corrupt file, skip
+        }
+      }
+    }
+  } catch {
+    // ~/.claude/projects doesn't exist
+  }
+
+  // Sort newest first
+  sessions.sort(
+    (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
+  );
+  return sessions;
+}
+
 // ===== API Routes =====
 
-// List sessions
+// List sessions — try CLI first, fall back to filesystem scan
 app.get("/api/sessions", async (c) => {
+  // Method 1: CLI
   try {
-    const { stdout } = await execFileAsync("claude", [
-      "sessions",
-      "list",
-      "--output-format",
-      "json",
-    ]);
-    const sessions = JSON.parse(stdout);
-    return c.json(
-      Array.isArray(sessions)
-        ? sessions.map((s: Record<string, unknown>) => ({
-            id: s.id || s.session_id,
-            label: s.label || s.title || s.cwd || "",
-            date: s.date || s.created_at || "",
-          }))
-        : []
+    const { stdout } = await execFileAsync(
+      "claude",
+      ["sessions", "list", "--output-format", "json"],
+      { env: { ...process.env, CLAUDECODE: "" } }
     );
-  } catch {
-    try {
-      const { stdout } = await execFileAsync("claude", [
-        "sessions",
-        "list",
-      ]);
-      const lines = stdout.trim().split("\n").filter(Boolean);
+    const parsed = JSON.parse(stdout);
+    if (Array.isArray(parsed) && parsed.length > 0) {
       return c.json(
-        lines.map((line) => {
-          const parts = line.trim().split(/\s+/);
-          return { id: parts[0], label: parts.slice(1).join(" ") };
-        })
+        parsed.map((s: Record<string, unknown>) => ({
+          id: s.id || s.session_id,
+          label: s.label || s.title || s.cwd || "",
+          date: s.date || s.created_at || "",
+          cwd: s.cwd || "",
+        }))
       );
-    } catch {
-      return c.json([]);
     }
+  } catch {
+    // CLI failed, try filesystem
   }
+
+  // Method 2: Filesystem scan
+  try {
+    const sessions = await scanSessionFiles();
+    if (sessions.length) return c.json(sessions);
+  } catch {
+    // scan failed
+  }
+
+  return c.json([]);
 });
+
+// Health check for auto-reconnect
+app.get("/api/ping", (c) => c.json({ ok: true }));
 
 // ===== WebSocket =====
 app.get(
@@ -148,14 +210,14 @@ const PORT = parseInt(process.env.PORT || "3456");
 const server = serve({ fetch: app.fetch, port: PORT }, (info) => {
   console.log(`\n  Claude Chat → http://localhost:${info.port}\n`);
 
-  // Auto-open browser on Windows/macOS
-  const open =
-    process.platform === "win32"
-      ? "start"
-      : process.platform === "darwin"
-        ? "open"
-        : "xdg-open";
+  // Auto-open browser on Windows/macOS (unless suppressed)
   if (process.env.NO_OPEN !== "1") {
+    const open =
+      process.platform === "win32"
+        ? "start"
+        : process.platform === "darwin"
+          ? "open"
+          : "xdg-open";
     import("node:child_process").then(({ exec }) => {
       exec(`${open} http://localhost:${info.port}`);
     });
