@@ -1,0 +1,31 @@
+name = "browning-cmo-orchestrator"
+main = "cmo-orchestrator.ts"
+compatibility_date = "2025-02-01"
+
+# Multi-schedule cron triggers:
+#   Every 15 min:  content queue health, RSS status
+#   Hourly:        pipeline check, SERP analysis, auto-content
+#   Daily 9am UTC: full ops report + revenue snapshot
+#   Weekly Mon 9am UTC: strategy review + pipeline advancement
+[triggers]
+crons = ["*/15 * * * *", "0 * * * *", "0 9 * * *", "0 9 * * 1"]
+
+# Deploy: wrangler deploy -c wrangler-cmo.toml
+# Secrets (set before deploying):
+#   wrangler secret put SUPABASE_URL -c wrangler-cmo.toml
+#   wrangler secret put SUPABASE_KEY -c wrangler-cmo.toml
+#   wrangler secret put CMO_AUTH_TOKEN -c wrangler-cmo.toml
+#
+# CMO Auth Token (generate):
+#   openssl rand -hex 32
+#
+# This is the brain of the Browning Digital CMO/COO agent.
+# It coordinates all revenue-driving operations:
+#   - Content pipeline management
+#   - Product pipeline advancement
+#   - SEO/SERP signal processing
+#   - Auto-dispatching content generation and product creation tasks
+#   - Daily/weekly reporting to Devin
+#
+# SCOPE: Digital products, SEO, SERP, CRO, ads, content, dev, UI/UX, sales/marketing
+# BLOCKED: Credit repair, SENTINEL, bureau disputes — completely off-limits

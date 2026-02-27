@@ -1,0 +1,21 @@
+name = "browning-rss-scraper"
+main = "rss-scraper.ts"
+compatibility_date = "2025-02-01"
+
+# Cron trigger — runs every 30 minutes to poll RSS feeds
+[triggers]
+crons = ["*/30 * * * *"]
+
+# Deploy: wrangler deploy -c wrangler-rss.toml
+# Secrets (set before deploying):
+#   wrangler secret put SUPABASE_URL -c wrangler-rss.toml
+#   wrangler secret put SUPABASE_KEY -c wrangler-rss.toml
+#
+# RSS feeds are configured in the scraper_configs table:
+#   - scrape_type = 'rss'
+#   - is_active = true
+#   - url = feed URL (RSS 2.0, Atom, RSS 1.0 supported)
+#   - scrape_interval_minutes = polling frequency
+#
+# Content pipeline:
+#   scraper_configs → [rss-scraper] → raw_content → content-ingest-poll → golden_nuggets

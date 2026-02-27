@@ -1,0 +1,20 @@
+name = "browning-serp-monitor"
+main = "serp-monitor.ts"
+compatibility_date = "2025-02-01"
+
+# Cron trigger — runs every 6 hours to check keyword rankings
+[triggers]
+crons = ["0 */6 * * *"]
+
+# Deploy: wrangler deploy -c wrangler-serp.toml
+# Secrets (set before deploying):
+#   wrangler secret put SUPABASE_URL -c wrangler-serp.toml
+#   wrangler secret put SUPABASE_KEY -c wrangler-serp.toml
+#   wrangler secret put SERP_API_KEY -c wrangler-serp.toml  (optional — ValueSERP or SerpAPI key)
+#
+# Keywords tracked in serp_tracking table.
+# History stored in serp_history table.
+# Results feed into cmo-orchestrator for content strategy decisions.
+#
+# Without SERP_API_KEY: uses direct Google scraping (rate limited, less reliable)
+# With SERP_API_KEY: uses ValueSERP API (reliable, recommended for production)
