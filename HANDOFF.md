@@ -1,86 +1,96 @@
-# SESSION HANDOFF — Feb 25, 2026 ~04:50 UTC
+# SESSION HANDOFF — Feb 27, 2026
 
-## WHAT'S HAPPENING RIGHT NOW
+## WHAT WAS HAPPENING
 
-**OCI ARM Provisioner** is running (PID 3552) trying to grab a free-tier ARM instance in `us-chicago-1`. 85+ attempts, ALL out of capacity. No instance has been created yet — verified directly via OCI API (no RUNNING, PROVISIONING, or STARTING instances exist).
+Devin asked for a status check on the **Browning Empire social accounts** infrastructure and then pivoted to **setting up Azure as a temporary cloud-node** while waiting for the OCI ARM instance to provision.
 
-**Daemon is alive BUT will die when this container goes dormant.** Cron watchdog (`* * * * *`) exists but dies with the container too.
+## SOCIAL ACCOUNTS STATUS (COMPREHENSIVE AUDIT DONE)
 
-## THE #1 PROBLEM: 86% DOWNTIME
+### Built & Production-Ready (5 platforms)
+| Platform | Method | Status |
+|----------|--------|--------|
+| Twitter/X | OAuth 1.0a HMAC-SHA1 | Ready |
+| LinkedIn | Community Management API v2 | Ready |
+| Threads | Meta Graph API (two-step publish) | Ready |
+| Facebook Pages | Graph API | Ready |
+| Instagram | Content Publishing API | Ready |
 
-This container environment sleeps when no active session is connected. Timeline analysis shows the provisioner has only been active ~14% of the time since it started (~19.5 hours ago). We've missed capacity windows during the 16+ hours of dormancy.
+**Workers deployed:**
+- `content-queue-poster` — 15-min cron, handles all 5 platforms
+- `browning-legal` — FB/GDPR compliance (privacy policy, data deletion)
+- `browning-api-bridge` — API proxy for egress-restricted envs
+- `sales-engine` — PayPal/Coinbase integrated with content queue
 
-**The previous session identified the fix: build a Cloudflare Worker with a cron trigger to replace the bash daemon.** User explicitly approved this ("Cloudflare is my entire ecosystem — stop asking and build"). The Worker was being built when context was lost.
+**Supporting infra:**
+- Content scoring engine (7 Browning pillars)
+- `content_queue`, `raw_content`, `golden_nuggets`, `scraper_configs` tables all live
+- Content ingest polling script ready (`content-ingest-poll.sh`)
 
-## WHAT NEEDS TO HAPPEN NEXT (PRIORITY ORDER)
+### Remaining Gaps
+1. **RSS feed scraper worker** — schema exists in `scraper_configs`, no worker polling feeds yet
+2. **TikTok / YouTube posting** — extraction works, no upload/post capability
+3. **Reddit / Discord / Telegram posting** — not built
+4. **Engagement analytics** — no automated metric pull-back from platforms
+5. **Account management UI** — everything is direct SQL, no dashboard
+6. **Multi-account support** — single account per platform only
+7. **Media hosting** — external URLs only, no CDN upload pipeline
+8. **Hashtag generation** — manual only, no AI-powered extraction
+9. **Scheduling precision** — 15-min cron granularity, no timezone support
 
-### 1. BUILD THE CLOUDFLARE WORKER PROVISIONER (CRITICAL)
-- Worker with `cron = "* * * * *"` trigger (every minute)
-- OCI REST API with RSA-SHA256 request signing (Web Crypto API)
-- Cycles through all 3 ADs: `NvCA:US-CHICAGO-1-AD-1`, `AD-2`, `AD-3`
-- Checks if instance exists before launching (avoid duplicates)
-- Logs to Supabase `oci_provisioner_log` table
-- Deploy to `oci-provisioner.devin-b58.workers.dev`
-- This replaces the bash daemon entirely — runs 24/7 on Cloudflare edge
+## AZURE SETUP — IN PROGRESS
 
-### 2. Set Worker Secrets
-All OCI config is in `/tmp/oci-provisioner.env`. Secrets needed:
-- `OCI_PRIVATE_KEY` — at `/root/.oci/oci_api_key.pem` (PKCS8 RSA key)
-- `OCI_TENANCY_OCID` — `ocid1.tenancy.oc1..aaaaaaaavdyv4edz5ucgy7obwwqnpief3hs3gssmgprbukebzzw22p4dclta`
-- `OCI_USER_OCID` — `ocid1.user.oc1..aaaaaaaa255joztqwt44675onpaslffma7jwntpvi4fmmsafmzcrsm5znycq`
-- `OCI_FINGERPRINT` — `2b:a7:a2:b0:7d:88:c9:92:2a:63:89:8a:61:e1:3f:13`
-- `OCI_COMPARTMENT_ID` — same as tenancy OCID (root compartment)
-- `OCI_SUBNET_ID` — `ocid1.subnet.oc1.us-chicago-1.aaaaaaaa2fsougo5gfvf4iejp26wrevsyldjw4ij2iydrmadx3cjgvafchga`
-- `OCI_IMAGE_ID` — `ocid1.image.oc1.us-chicago-1.aaaaaaaasgxseqzzng27gzr3cmxntq3zjl3jrq6k3n5zx23pde5b2d2tflqa`
-- `OCI_SSH_PUBLIC_KEY` — at `/root/.ssh/oci_instance.pub`
-- `SUPABASE_URL`, `SUPABASE_KEY` — from Browning Memory credentials
+### Context
+- OCI ARM instance (4 OCPU / 24GB) still hasn't provisioned (capacity issues in us-chicago-1)
+- Devin has an Azure account with **$200 in credits**
+- Plan: spin up **B2pts v2 ARM VM** (free tier, closest to OCI target arch) as temporary cloud-node
 
-### 3. Cloud-init Tokens Still Placeholder
-`cloud-init.sh` has `REPLACE_ME_WITH_TUNNEL_TOKEN` and `REPLACE_ME_WITH_PASSWORD`. When the instance IS created:
-- Instance creation succeeds (SSH key in metadata works)
-- Cloud-init bootstrap FAILS (exits on placeholder check)
-- Manual SSH bootstrap required after instance creation
-- To fix: create a Cloudflare Tunnel token and set `TUNNEL_TOKEN` in the env file before the daemon bakes metadata
+### What Was Decided
+- Azure VM will temporarily run: cloud-node agent, content ingest polling, task dispatch, relay server, cron jobs
+- Region: likely East US (pending confirmation)
+- Image: Ubuntu 24.04 ARM
 
-## INFRASTRUCTURE STATUS (ALL GREEN)
+### WHAT NEEDS TO HAPPEN NEXT (PICK UP HERE)
 
-| Component | Status |
-|-----------|--------|
-| OCI CLI auth | Working (user + tenancy + PEM key valid) |
-| VCN/Subnet | AVAILABLE (`browning-public-subnet` in Chicago) |
-| Image | AVAILABLE (Ubuntu 24.04 aarch64) |
-| SSH Key | Present at `/root/.ssh/oci_instance.pub` |
-| A1 Core Limit | 41 available, 0 used |
-| Cron Watchdog | Active (`* * * * *`) |
-| OCI Config | `/root/.oci/config` — region `us-chicago-1` |
+1. **Devin needs to install Azure CLI on Windows:**
+   ```cmd
+   winget install -e --id Microsoft.AzureCLI
+   ```
+   Then close/reopen terminal, run `az login`, then `az account show` and share output.
 
-## PROVISIONER SCRIPT AUDIT (CLEAN)
+2. **Once authenticated, provision the VM:**
+   - Resource group: `browning-cloud-rg`
+   - VM: B2pts v2 ARM (Ubuntu 24.04)
+   - SSH key setup
+   - Install Node.js, git, wrangler
+   - Clone claude-mem
+   - Deploy cloud-node services
+   - Set up cron jobs (content-ingest-poll.sh every 15min)
 
-Scripts at `cloud-node/scripts/`:
-- `oci-provisioner-daemon.sh` — main retry loop, signal-trapped, flock mutex, multi-AD cycling. **No bugs found.**
-- `oci-provisioner-watchdog.sh` — cron companion, checks PID, clears stale locks, restarts daemon. **Works correctly when cron is alive.**
-- `oci-provision-launch.sh` — one-time launcher that auto-detects ADs and writes env file.
-- `provision-oracle.sh` — standalone version (predecessor to daemon).
-- `cloud-init.sh` — bootstrap script (installs Docker, code-server, cloudflared, etc). **Has placeholder tokens.**
+3. **After VM is running, deploy cloud-node stack:**
+   - Content polling cron
+   - Task dispatch
+   - Relay server for iPhone
+   - Cloudflare Tunnel (if needed for web access)
 
-## INSTANCE CONFIG
+## OCI PROVISIONER STATUS (UNCHANGED)
 
-- Shape: `VM.Standard.A1.Flex` (4 OCPU / 24 GB RAM / 100 GB boot)
-- Region: `us-chicago-1`
-- Display name: `browning-cloud-node`
-- 3 ADs cycling: AD-1, AD-2, AD-3
-- Retry interval: 45 seconds between attempts
+- Still waiting on capacity in `us-chicago-1`
+- Cloudflare Worker provisioner was planned (approved by Devin) but not yet built
+- Bash daemon scripts still at `cloud-node/scripts/` as fallback
+- All OCI infra (VCN, subnet, image, SSH key) verified working
+- See previous handoff for full OCI config details
 
 ## GIT STATE
 
-- Branch: `claude/review-cloud-setup-vhfUp`
+- Branch: `claude/integrate-rss-infrastructure-PryET`
 - Clean working tree
-- Latest commit: `c013040 feat: sticky mobile CTA`
-- No uncommitted changes
+- Latest commit: `f07a7fc Add branded app icon`
+- No uncommitted changes this session (research/planning only)
 
 ## DO NOT
 
-- Do NOT use GitHub Actions (user explicitly said no — quota concern)
-- Do NOT ask, just build the Cloudflare Worker
-- Do NOT delete the bash daemon scripts — keep as fallback
+- Do NOT ask for API keys — retrieve from Browning Memory or `claude_system_state`
+- Do NOT push to main without permission
+- Do NOT delete the OCI bash daemon scripts — keep as fallback
 - Do NOT hardcode secrets in source — use `wrangler secret put`
+- Do NOT skip the Azure CLI install step — Devin doesn't have it yet
