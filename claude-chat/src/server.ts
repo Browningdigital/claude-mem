@@ -5,9 +5,10 @@ import { serve } from "@hono/node-server";
 import type { WSContext } from "hono/ws";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import { readdir, readFile } from "node:fs/promises";
+import { readdir, open, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { homedir } from "node:os";
+import { createReadStream } from "node:fs";
 import { ClaudeBridge } from "./claude-bridge.js";
 
 const execFileAsync = promisify(execFile);
@@ -24,6 +25,37 @@ interface SessionInfo {
   label: string;
   date: string;
   cwd: string;
+}
+
+/** Read just the first line of a file (efficient — doesn't load the whole thing) */
+async function readFirstLine(filePath: string): Promise<string> {
+  return new Promise((resolve, reject) => {
+    let data = "";
+    const stream = createReadStream(filePath, { encoding: "utf-8", highWaterMark: 2048 });
+    stream.on("data", (chunk: string) => {
+      data += chunk;
+      const nl = data.indexOf("\n");
+      if (nl !== -1) {
+        stream.destroy();
+        resolve(data.slice(0, nl));
+      }
+    });
+    stream.on("end", () => resolve(data));
+    stream.on("error", reject);
+  });
+}
+
+/** Decode a Claude project folder name back to a path */
+function decodeProjectDir(name: string): string {
+  // Claude encodes paths like: -home-user-project -> /home/user/project
+  // On Windows: C-Users-ssoif-project -> C:\Users\ssoif\project
+  if (/^[A-Z]-/.test(name)) {
+    // Windows: starts with drive letter
+    const parts = name.split("-");
+    return parts[0] + ":\\" + parts.slice(1).join("\\");
+  }
+  // Unix: leading dash = /
+  return name.replace(/^-/, "/").replace(/-/g, "/");
 }
 
 async function scanSessionFiles(): Promise<SessionInfo[]> {
@@ -46,22 +78,23 @@ async function scanSessionFiles(): Promise<SessionInfo[]> {
       for (const file of jsonlFiles) {
         try {
           const filePath = join(projectDir, file);
-          const content = await readFile(filePath, "utf-8");
-          const firstLine = content.split("\n")[0];
+          // Get file mtime for sorting (fast, no content read)
+          const fstat = await stat(filePath);
+          // Read only first line
+          const firstLine = await readFirstLine(filePath);
           if (!firstLine) continue;
 
           const entry = JSON.parse(firstLine);
           const sessionId = entry.sessionId || file.replace(".jsonl", "");
-          const cwd = entry.cwd || project.replace(/-/g, "/");
-          const date = entry.timestamp || "";
-          const label =
-            entry.slug ||
-            cwd.split("/").pop() ||
-            sessionId.slice(0, 8);
+          const cwd = entry.cwd || decodeProjectDir(project);
+          const date = entry.timestamp || fstat.mtime.toISOString();
+          const slug = entry.slug || "";
+          const cwdShort = cwd.split(/[/\\]/).pop() || cwd;
+          const label = slug || cwdShort;
 
           sessions.push({ id: sessionId, label, date, cwd });
         } catch {
-          // corrupt file, skip
+          // corrupt or unreadable, skip
         }
       }
     }
@@ -69,23 +102,33 @@ async function scanSessionFiles(): Promise<SessionInfo[]> {
     // ~/.claude/projects doesn't exist
   }
 
-  // Sort newest first
+  // Sort newest first by date
   sessions.sort(
     (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
   );
-  return sessions;
+
+  // Dedupe by session ID (keep newest)
+  const seen = new Set<string>();
+  return sessions.filter((s) => {
+    if (seen.has(s.id)) return false;
+    seen.add(s.id);
+    return true;
+  });
 }
 
 // ===== API Routes =====
 
 // List sessions — try CLI first, fall back to filesystem scan
 app.get("/api/sessions", async (c) => {
-  // Method 1: CLI
+  // Method 1: CLI (with timeout so it doesn't hang)
   try {
     const { stdout } = await execFileAsync(
       "claude",
       ["sessions", "list", "--output-format", "json"],
-      { env: { ...process.env, CLAUDECODE: "" } }
+      {
+        env: { ...process.env, CLAUDECODE: "" },
+        timeout: 5000,
+      }
     );
     const parsed = JSON.parse(stdout);
     if (Array.isArray(parsed) && parsed.length > 0) {
@@ -99,7 +142,7 @@ app.get("/api/sessions", async (c) => {
       );
     }
   } catch {
-    // CLI failed, try filesystem
+    // CLI failed or timed out, try filesystem
   }
 
   // Method 2: Filesystem scan
@@ -113,7 +156,16 @@ app.get("/api/sessions", async (c) => {
   return c.json([]);
 });
 
-// Health check for auto-reconnect
+// Server info — cwd and homedir for the UI
+app.get("/api/info", (c) =>
+  c.json({
+    cwd: process.cwd(),
+    home: homedir(),
+    platform: process.platform,
+  })
+);
+
+// Health check
 app.get("/api/ping", (c) => c.json({ ok: true }));
 
 // ===== WebSocket =====
@@ -123,7 +175,14 @@ app.get(
     onOpen(_event, ws) {
       const bridge = new ClaudeBridge();
       bridges.set(ws, bridge);
-      ws.send(JSON.stringify({ type: "connected" }));
+      ws.send(
+        JSON.stringify({
+          type: "connected",
+          cwd: process.cwd(),
+          home: homedir(),
+          platform: process.platform,
+        })
+      );
     },
 
     async onMessage(event, ws) {
@@ -210,7 +269,6 @@ const PORT = parseInt(process.env.PORT || "3456");
 const server = serve({ fetch: app.fetch, port: PORT }, (info) => {
   console.log(`\n  Claude Chat → http://localhost:${info.port}\n`);
 
-  // Auto-open browser on Windows/macOS (unless suppressed)
   if (process.env.NO_OPEN !== "1") {
     const open =
       process.platform === "win32"

@@ -9,6 +9,8 @@ let textBuf = "";
 let sessionId = null;
 let conversations = JSON.parse(localStorage.getItem("cc_convos") || "[]");
 let connected = false;
+let serverCwd = "";
+let remoteSessions = []; // cached from /api/sessions
 
 // ===== DOM refs =====
 const $ = (s) => document.querySelector(s);
@@ -36,6 +38,7 @@ marked.setOptions({
 });
 
 connect();
+loadSessions(); // always load remote sessions on startup
 renderConversationList();
 updateSend();
 
@@ -61,7 +64,6 @@ function connect() {
     statusDot.classList.remove("busy");
     statusText.textContent = "Connected";
     if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
-    // Re-sync session
     if (sessionId) {
       ws.send(JSON.stringify({ type: "setSession", sessionId }));
     }
@@ -70,7 +72,7 @@ function connect() {
   ws.onclose = () => {
     connected = false;
     statusDot.classList.remove("connected", "busy");
-    statusText.textContent = "Disconnected — click to reconnect";
+    statusText.textContent = "Disconnected \u2014 click to reconnect";
     scheduleReconnect();
   };
 
@@ -94,7 +96,6 @@ function forceReconnect() {
   if (connected) return;
   if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
   reconnectDelay = 1000;
-  // Close stale socket
   if (ws) { try { ws.close(); } catch {} ws = null; }
   statusText.textContent = "Reconnecting...";
   connect();
@@ -114,14 +115,20 @@ document.addEventListener("visibilitychange", () => {
   }
 });
 
-// Also reconnect on window focus (covers alt-tab)
 window.addEventListener("focus", () => {
   if (!ws || ws.readyState !== WebSocket.OPEN) forceReconnect();
 });
 
 // ===== Event handler =====
 function handleEvent(ev) {
-  if (ev.type === "connected") return;
+  // Server sends cwd/platform on connect
+  if (ev.type === "connected") {
+    if (ev.cwd && !cwdInput.value) {
+      serverCwd = ev.cwd;
+      cwdInput.value = ev.cwd;
+    }
+    return;
+  }
 
   if (ev.type === "thinking") {
     setStreaming(true);
@@ -144,7 +151,6 @@ function handleEvent(ev) {
       ensureBubble();
     }
 
-    // Text
     if (e?.type === "content_block_delta" && e?.delta?.type === "text_delta") {
       killThinking();
       ensureBubble();
@@ -153,7 +159,6 @@ function handleEvent(ev) {
       scroll();
     }
 
-    // Tool start
     if (e?.type === "content_block_start" && e?.content_block?.type === "tool_use") {
       killThinking();
       ensureBubble();
@@ -167,14 +172,12 @@ function handleEvent(ev) {
       scroll();
     }
 
-    // Tool end
     if (e?.type === "content_block_stop" && currentEl) {
       const pending = currentEl.querySelectorAll(".tool-ind:not(.done)");
       if (pending.length) pending[pending.length - 1].classList.add("done");
     }
   }
 
-  // Session capture
   if (ev.session_id && ev.session_id !== sessionId) {
     sessionId = ev.session_id;
     topSession.textContent = sessionId.slice(0, 12) + "...";
@@ -362,26 +365,20 @@ function clearImages() {
 
 // ===== Sessions =====
 async function loadSessions() {
-  sessionList.innerHTML = `<div style="padding:12px;color:var(--text-3);font-size:13px">Loading...</div>`;
   try {
     const res = await fetch("/api/sessions");
-    const list = await res.json();
-    if (!list.length) {
-      sessionList.innerHTML = `<div style="padding:12px;color:var(--text-3);font-size:13px">No sessions found. Start chatting to create one.</div>`;
-      return;
-    }
-    sessionList.innerHTML = list.map((s) => `
-      <div class="session-item${s.id === sessionId ? " active" : ""}" onclick="resumeSession('${esc(s.id)}')">
-        <span class="sid" title="${esc(s.id)}">${esc(s.label || s.id.slice(0, 16))}</span>
-        <span class="meta">${esc(s.cwd || s.date || "")}</span>
-      </div>
-    `).join("");
+    remoteSessions = await res.json();
   } catch {
-    sessionList.innerHTML = `<div style="padding:12px;color:var(--text-3);font-size:13px">Could not load sessions</div>`;
+    remoteSessions = [];
   }
+  renderConversationList();
 }
 
 function resumeSession(id) {
+  // When clicking a remote session, also set cwd from that session
+  const remote = remoteSessions.find((s) => s.id === id);
+  if (remote?.cwd) cwdInput.value = remote.cwd;
+
   sessionId = id;
   topSession.textContent = id.slice(0, 12) + "...";
   clearChat();
@@ -421,17 +418,44 @@ function saveConvo() {
 }
 
 function renderConversationList() {
+  let html = "";
+
+  // Local conversations (from this browser)
   const saved = conversations.slice(0, 20);
-  if (!saved.length) {
-    loadSessions();
-    return;
+  if (saved.length) {
+    html += `<div class="sidebar-label" style="padding:8px 12px 4px;font-size:11px;text-transform:uppercase;color:var(--text-3)">Local</div>`;
+    html += saved.map((c) => `
+      <div class="session-item${c.id === sessionId ? " active" : ""}" onclick="loadConvo('${c.id}')">
+        <span class="sid">${c.label || c.id.slice(0, 12)}</span>
+        <span class="meta">${timeAgo(c.updated)}</span>
+      </div>
+    `).join("");
   }
-  sessionList.innerHTML = saved.map((c) => `
-    <div class="session-item${c.id === sessionId ? " active" : ""}" onclick="loadConvo('${c.id}')">
-      <span class="sid">${c.label || c.id.slice(0, 12)}</span>
-      <span class="meta">${timeAgo(c.updated)}</span>
-    </div>
-  `).join("");
+
+  // Remote sessions (from filesystem scan)
+  const localIds = new Set(saved.map((c) => c.id));
+  const remoteOnly = remoteSessions.filter((s) => !localIds.has(s.id));
+  if (remoteOnly.length) {
+    html += `<div class="sidebar-label" style="padding:12px 12px 4px;font-size:11px;text-transform:uppercase;color:var(--text-3);border-top:1px solid var(--border)">Sessions on disk</div>`;
+    html += remoteOnly.slice(0, 30).map((s) => `
+      <div class="session-item${s.id === sessionId ? " active" : ""}" onclick="resumeSession('${esc(s.id)}')">
+        <span class="sid" title="${esc(s.id)}">${esc(s.label || s.id.slice(0, 12))}</span>
+        <span class="meta">${esc(shortPath(s.cwd))}</span>
+      </div>
+    `).join("");
+  }
+
+  if (!html) {
+    html = `<div style="padding:12px;color:var(--text-3);font-size:13px">No sessions yet. Start chatting!</div>`;
+  }
+
+  sessionList.innerHTML = html;
+}
+
+function shortPath(p) {
+  if (!p) return "";
+  const parts = p.split(/[/\\]/);
+  return parts.slice(-2).join("/");
 }
 
 function loadConvo(id) {
