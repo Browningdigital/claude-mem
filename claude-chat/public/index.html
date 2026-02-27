@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Claude Chat</title>
+  <link rel="stylesheet" href="/style.css">
+  <!-- Markdown rendering -->
+  <script src="https://cdn.jsdelivr.net/npm/marked@15/marked.min.js"></script>
+  <!-- Syntax highlighting -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11/build/styles/github-dark.min.css">
+  <script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11/build/highlight.min.js"></script>
+</head>
+<body>
+  <!-- Session picker overlay -->
+  <div id="session-overlay" class="overlay hidden">
+    <div class="overlay-content">
+      <div class="overlay-header">
+        <h2>Sessions</h2>
+        <button class="icon-btn" onclick="closeSessionPicker()">&times;</button>
+      </div>
+      <div id="session-list" class="session-list">
+        <div class="session-loading">Loading sessions...</div>
+      </div>
+      <div class="overlay-actions">
+        <button class="btn btn-primary" onclick="newSession()">New Session</button>
+        <button class="btn btn-ghost" onclick="resumeLatest()">Resume Latest</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Main layout -->
+  <div class="app">
+    <!-- Header -->
+    <header class="header">
+      <div class="header-left">
+        <div class="logo">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+          </svg>
+          <span>Claude Chat</span>
+        </div>
+        <button class="session-badge" id="session-badge" onclick="openSessionPicker()">
+          <span class="dot" id="status-dot"></span>
+          <span id="session-label">No session</span>
+        </button>
+      </div>
+      <div class="header-right">
+        <button class="icon-btn" id="cwd-btn" onclick="changeCwd()" title="Working directory">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+          </svg>
+        </button>
+        <span class="cwd-label" id="cwd-label" title="Working directory"></span>
+      </div>
+    </header>
+
+    <!-- Chat area -->
+    <main class="chat" id="chat">
+      <div class="welcome" id="welcome">
+        <div class="welcome-icon">
+          <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" opacity="0.3">
+            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+          </svg>
+        </div>
+        <p class="welcome-text">Paste an image, type a message, hit send.</p>
+        <p class="welcome-sub">Ctrl+V to paste images &bull; Shift+Enter for newline &bull; Enter to send</p>
+      </div>
+    </main>
+
+    <!-- Input area -->
+    <footer class="input-area">
+      <!-- Image preview strip -->
+      <div class="image-strip hidden" id="image-strip"></div>
+
+      <div class="input-row">
+        <div class="input-wrapper">
+          <textarea
+            id="input"
+            placeholder="Message Claude..."
+            rows="1"
+            autofocus
+          ></textarea>
+        </div>
+        <button class="send-btn" id="send-btn" onclick="sendMessage()" disabled>
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <line x1="22" y1="2" x2="11" y2="13"/>
+            <polygon points="22 2 15 22 11 13 2 9 22 2"/>
+          </svg>
+        </button>
+        <button class="abort-btn hidden" id="abort-btn" onclick="abortMessage()">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
+          </svg>
+        </button>
+      </div>
+    </footer>
+  </div>
+
+  <script src="/app.js"></script>
+</body>
+</html>
