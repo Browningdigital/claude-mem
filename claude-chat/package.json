@@ -8,8 +8,9 @@
     "start": "tsx src/server.ts",
     "build": "tsc",
     "icon": "node build-icon.mjs",
-    "pkg": "npm run build && npm run icon && npx @yao-pkg/pkg dist/server.js --targets node22-win-x64 --output claude-chat.exe --icon icon.ico --no-console --assets public/**/*",
-    "dist": "npm run pkg && echo Built claude-chat.exe — copy with tray.ps1 and start.bat"
+    "pkg": "npm run build && npm run icon && npx @yao-pkg/pkg dist/server.js --targets node22-win-x64 --output claude-chat.exe --assets public/**/*",
+    "patch-exe": "npx rcedit claude-chat.exe --set-icon icon.ico --set-version-string ProductName \"Claude Chat\" --set-version-string FileDescription \"Claude Chat Server\" && node scripts/patch-subsystem.mjs claude-chat.exe",
+    "dist": "npm run pkg && npm run patch-exe && echo Done! claude-chat.exe is ready."
   },
   "pkg": {
     "assets": ["public/**/*"],
