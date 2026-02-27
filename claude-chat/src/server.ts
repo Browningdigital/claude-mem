@@ -12,10 +12,11 @@ const execFileAsync = promisify(execFile);
 const app = new Hono();
 const { injectWebSocket, upgradeWebSocket } = createNodeWebSocket({ app });
 
-// Track active bridges per connection
 const bridges = new Map<WSContext, ClaudeBridge>();
 
-// Session listing API
+// ===== API Routes =====
+
+// List sessions
 app.get("/api/sessions", async (c) => {
   try {
     const { stdout } = await execFileAsync("claude", [
@@ -35,28 +36,25 @@ app.get("/api/sessions", async (c) => {
         : []
     );
   } catch {
-    // Fallback: try parsing text output
     try {
       const { stdout } = await execFileAsync("claude", [
         "sessions",
         "list",
       ]);
       const lines = stdout.trim().split("\n").filter(Boolean);
-      const sessions = lines.map((line) => {
-        const parts = line.trim().split(/\s+/);
-        return { id: parts[0], label: parts.slice(1).join(" ") };
-      });
-      return c.json(sessions);
+      return c.json(
+        lines.map((line) => {
+          const parts = line.trim().split(/\s+/);
+          return { id: parts[0], label: parts.slice(1).join(" ") };
+        })
+      );
     } catch {
       return c.json([]);
     }
   }
 });
 
-// Serve static frontend
-app.use("/*", serveStatic({ root: "./public" }));
-
-// WebSocket endpoint
+// ===== WebSocket =====
 app.get(
   "/ws",
   upgradeWebSocket(() => ({
@@ -110,19 +108,20 @@ app.get(
                 msg.sessionId || (bridge.currentSessionId ?? undefined),
               workingDir: msg.workingDir,
             },
-            (event) => {
+            (ev) => {
               try {
-                ws.send(JSON.stringify(event));
+                ws.send(JSON.stringify(ev));
               } catch {
                 // ws closed
               }
             }
           );
         } catch (err: unknown) {
-          const errMsg =
-            err instanceof Error ? err.message : "Unknown error";
           ws.send(
-            JSON.stringify({ type: "error", message: errMsg })
+            JSON.stringify({
+              type: "error",
+              message: err instanceof Error ? err.message : "Unknown error",
+            })
           );
         }
       } else if (msg.type === "abort") {
@@ -141,10 +140,26 @@ app.get(
   }))
 );
 
+// Static files — AFTER api routes so they don't shadow
+app.use("/*", serveStatic({ root: "./public" }));
+
 const PORT = parseInt(process.env.PORT || "3456");
 
 const server = serve({ fetch: app.fetch, port: PORT }, (info) => {
-  console.log(`claude-chat running → http://localhost:${info.port}`);
+  console.log(`\n  Claude Chat → http://localhost:${info.port}\n`);
+
+  // Auto-open browser on Windows/macOS
+  const open =
+    process.platform === "win32"
+      ? "start"
+      : process.platform === "darwin"
+        ? "open"
+        : "xdg-open";
+  if (process.env.NO_OPEN !== "1") {
+    import("node:child_process").then(({ exec }) => {
+      exec(`${open} http://localhost:${info.port}`);
+    });
+  }
 });
 
 injectWebSocket(server);

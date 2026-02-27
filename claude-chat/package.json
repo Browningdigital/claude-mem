@@ -2,9 +2,16 @@
   "name": "claude-chat",
   "version": "1.0.0",
   "type": "module",
+  "bin": "dist/server.js",
   "scripts": {
-    "dev": "tsx watch src/server.ts",
-    "start": "tsx src/server.ts"
+    "dev": "NO_OPEN=1 tsx watch src/server.ts",
+    "start": "tsx src/server.ts",
+    "build": "tsc",
+    "pkg": "npm run build && npx pkg dist/server.js --targets node22-win-x64 --output claude-chat.exe --assets public/**/*"
+  },
+  "pkg": {
+    "assets": ["public/**/*"],
+    "outputPath": "."
   },
   "dependencies": {
     "@hono/node-server": "^1.19.9",

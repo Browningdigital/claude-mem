@@ -1,435 +1,455 @@
 // ===== State =====
 let ws = null;
-let pendingImages = []; // { data: base64, mime: string, url: objectURL }
-let isStreaming = false;
-let currentAssistantEl = null;
-let currentTextAccumulator = "";
-let currentSessionId = null;
-let workingDir = "";
+let reconnectTimer = null;
+let images = []; // { data, mime, url }
+let streaming = false;
+let currentEl = null;
+let textBuf = "";
+let sessionId = null;
+let conversations = JSON.parse(localStorage.getItem("cc_convos") || "[]");
+let activeConvoIdx = -1;
 
-// ===== DOM =====
-const chat = document.getElementById("chat");
-const input = document.getElementById("input");
-const sendBtn = document.getElementById("send-btn");
-const abortBtn = document.getElementById("abort-btn");
-const imageStrip = document.getElementById("image-strip");
-const sessionOverlay = document.getElementById("session-overlay");
-const sessionList = document.getElementById("session-list");
-const sessionLabel = document.getElementById("session-label");
-const statusDot = document.getElementById("status-dot");
-const cwdLabel = document.getElementById("cwd-label");
-const welcome = document.getElementById("welcome");
+// ===== DOM refs =====
+const $ = (s) => document.querySelector(s);
+const messages = $("#messages");
+const input = $("#input");
+const sendBtn = $("#send-btn");
+const stopBtn = $("#stop-btn");
+const strip = $("#image-strip");
+const sidebar = $("#sidebar");
+const sessionList = $("#session-list");
+const statusDot = $("#status-dot");
+const statusText = $("#status-text");
+const cwdInput = $("#cwd-input");
+const topSession = $("#topbar-session");
+const emptyState = $("#empty-state");
 
-// ===== Markdown setup =====
+// ===== Init =====
 marked.setOptions({
-  highlight(code, lang) {
-    if (lang && hljs.getLanguage(lang)) {
-      return hljs.highlight(code, { language: lang }).value;
-    }
-    return hljs.highlightAuto(code).value;
-  },
+  highlight: (code, lang) =>
+    lang && hljs.getLanguage(lang)
+      ? hljs.highlight(code, { language: lang }).value
+      : hljs.highlightAuto(code).value,
   breaks: true,
   gfm: true,
 });
+
+connect();
+renderConversationList();
+updateSend();
 
 // ===== WebSocket =====
 function connect() {
   const proto = location.protocol === "https:" ? "wss:" : "ws:";
   ws = new WebSocket(`${proto}//${location.host}/ws`);
-
   ws.onopen = () => {
-    statusDot.classList.add("active");
+    statusDot.classList.add("connected");
     statusDot.classList.remove("busy");
+    statusText.textContent = "Connected";
+    if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
   };
-
   ws.onclose = () => {
-    statusDot.classList.remove("active", "busy");
-    setTimeout(connect, 2000);
+    statusDot.classList.remove("connected", "busy");
+    statusText.textContent = "Disconnected";
+    reconnectTimer = setTimeout(connect, 2000);
   };
-
-  ws.onmessage = (event) => {
-    const data = JSON.parse(event.data);
-    handleEvent(data);
-  };
+  ws.onmessage = (e) => handleEvent(JSON.parse(e.data));
 }
 
 // ===== Event handler =====
-function handleEvent(event) {
-  // Connected
-  if (event.type === "connected") return;
+function handleEvent(ev) {
+  if (ev.type === "connected") return;
 
-  // Thinking indicator
-  if (event.type === "thinking") {
+  if (ev.type === "thinking") {
     setStreaming(true);
-    removeThinking();
-    chat.insertAdjacentHTML("beforeend", `
-      <div class="thinking" id="thinking">
-        <div class="thinking-dots"><span></span><span></span><span></span></div>
+    killThinking();
+    messages.insertAdjacentHTML("beforeend", `
+      <div class="thinking-row" id="thinking">
+        <div class="dots"><span></span><span></span><span></span></div>
         <span>Thinking...</span>
       </div>
     `);
-    scrollToBottom();
+    scroll();
     return;
   }
 
-  // Stream events from Claude CLI
-  if (event.type === "stream_event") {
-    const ev = event.event;
+  if (ev.type === "stream_event") {
+    const e = ev.event;
 
-    // Message start — create assistant bubble
-    if (ev?.type === "message_start") {
-      removeThinking();
-      ensureAssistantBubble();
+    if (e?.type === "message_start") {
+      killThinking();
+      ensureBubble();
     }
 
-    // Text content streaming
-    if (ev?.type === "content_block_delta" && ev?.delta?.type === "text_delta") {
-      removeThinking();
-      ensureAssistantBubble();
-      currentTextAccumulator += ev.delta.text;
-      renderAssistantContent();
-      scrollToBottom();
+    // Text
+    if (e?.type === "content_block_delta" && e?.delta?.type === "text_delta") {
+      killThinking();
+      ensureBubble();
+      textBuf += e.delta.text;
+      renderBubble();
+      scroll();
     }
 
-    // Tool use start
-    if (ev?.type === "content_block_start" && ev?.content_block?.type === "tool_use") {
-      removeThinking();
-      ensureAssistantBubble();
-      const toolName = ev.content_block.name || "Tool";
-      const toolId = ev.content_block.id || "";
-      const indicator = document.createElement("div");
-      indicator.className = "tool-indicator";
-      indicator.setAttribute("data-tool-id", toolId);
-      indicator.innerHTML = `<div class="spinner"></div><span>${escapeHtml(toolName)}</span>`;
-      currentAssistantEl.querySelector(".message-body").appendChild(indicator);
-      scrollToBottom();
+    // Tool start
+    if (e?.type === "content_block_start" && e?.content_block?.type === "tool_use") {
+      killThinking();
+      ensureBubble();
+      const name = e.content_block.name || "Tool";
+      const id = e.content_block.id || "";
+      const t = document.createElement("span");
+      t.className = "tool-ind";
+      t.dataset.toolId = id;
+      t.innerHTML = `<span class="spin"></span>${esc(name)}`;
+      currentEl.querySelector(".msg-body").appendChild(t);
+      scroll();
     }
 
-    // Tool use end
-    if (ev?.type === "content_block_stop") {
-      // Mark tool indicators as done
-      if (currentAssistantEl) {
-        const indicators = currentAssistantEl.querySelectorAll(".tool-indicator:not(.done)");
-        if (indicators.length) {
-          indicators[indicators.length - 1].classList.add("done");
-        }
-      }
+    // Tool end
+    if (e?.type === "content_block_stop" && currentEl) {
+      const pending = currentEl.querySelectorAll(".tool-ind:not(.done)");
+      if (pending.length) pending[pending.length - 1].classList.add("done");
     }
   }
 
-  // Session ID capture
-  if (event.session_id) {
-    currentSessionId = event.session_id;
-    sessionLabel.textContent = currentSessionId.slice(0, 8) + "...";
+  // Session capture
+  if (ev.session_id && ev.session_id !== sessionId) {
+    sessionId = ev.session_id;
+    topSession.textContent = sessionId.slice(0, 12) + "...";
+    saveConvo();
   }
 
-  // Done
-  if (event.type === "done") {
-    removeThinking();
+  if (ev.type === "done") {
+    killThinking();
     setStreaming(false);
-    if (event.session_id) {
-      currentSessionId = event.session_id;
-      sessionLabel.textContent = currentSessionId.slice(0, 8) + "...";
-    }
+    saveConvo();
   }
 
-  // Error
-  if (event.type === "error") {
-    removeThinking();
+  if (ev.type === "error") {
+    killThinking();
     setStreaming(false);
-    appendError(event.message);
+    addMsg("assistant", `Error: ${ev.message}`, null, "err");
   }
 
-  // Result message (final)
-  if (event.type === "result") {
-    removeThinking();
-    if (event.result && !currentTextAccumulator) {
-      ensureAssistantBubble();
-      currentTextAccumulator = event.result;
-      renderAssistantContent();
-    }
-    if (event.session_id) {
-      currentSessionId = event.session_id;
-      sessionLabel.textContent = currentSessionId.slice(0, 8) + "...";
-    }
+  if (ev.type === "result" && ev.result && !textBuf) {
+    ensureBubble();
+    textBuf = ev.result;
+    renderBubble();
   }
 }
 
-function ensureAssistantBubble() {
-  if (currentAssistantEl) return;
-  welcome?.remove();
-
-  const el = document.createElement("div");
-  el.className = "message assistant";
-  el.innerHTML = `
-    <div class="message-role assistant">Claude</div>
-    <div class="message-body"></div>
-  `;
-  chat.appendChild(el);
-  currentAssistantEl = el;
-  currentTextAccumulator = "";
+// ===== Message rendering =====
+function ensureBubble() {
+  if (currentEl) return;
+  hideEmpty();
+  currentEl = addMsgEl("assistant");
+  textBuf = "";
 }
 
-function renderAssistantContent() {
-  if (!currentAssistantEl) return;
-  const body = currentAssistantEl.querySelector(".message-body");
-
-  // Preserve tool indicators
-  const tools = body.querySelectorAll(".tool-indicator");
+function renderBubble() {
+  if (!currentEl) return;
+  const body = currentEl.querySelector(".msg-body");
+  const tools = body.querySelectorAll(".tool-ind");
   const toolsHtml = Array.from(tools).map((t) => t.outerHTML).join("");
 
-  // Render markdown
-  let html = marked.parse(currentTextAccumulator);
-
-  // Add copy buttons to code blocks
-  html = html.replace(
-    /<pre><code class="language-(\w+)">/g,
-    `<pre><div class="code-header"><span>$1</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div><code class="language-$1">`
-  );
-  // Handle code blocks without language
-  html = html.replace(
-    /<pre><code>(?!<)/g,
-    `<pre><div class="code-header"><span>code</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div><code>`
-  );
+  let html = marked.parse(textBuf);
+  // Code block headers
+  html = html.replace(/<pre><code class="language-(\w+)">/g,
+    `<pre><div class="code-head"><span>$1</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div><code class="language-$1">`);
+  html = html.replace(/<pre><code>(?!<)/g,
+    `<pre><div class="code-head"><span>code</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div><code>`);
 
   body.innerHTML = html + toolsHtml;
 }
 
-// ===== Send message =====
+function addMsg(role, text, msgImages, cls) {
+  hideEmpty();
+  const el = addMsgEl(role, msgImages, cls);
+  el.querySelector(".msg-body").innerHTML = role === "user"
+    ? esc(text).replace(/\n/g, "<br>")
+    : marked.parse(text);
+  scroll();
+  return el;
+}
+
+function addMsgEl(role, msgImages, cls) {
+  const time = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  const avatar = role === "user" ? "Y" : "C";
+  const name = role === "user" ? "You" : "Claude";
+
+  const el = document.createElement("div");
+  el.className = `msg ${role}${cls ? " " + cls : ""}`;
+
+  let imgsHtml = "";
+  if (msgImages?.length) {
+    imgsHtml = `<div class="msg-images">${msgImages.map((u) => `<img src="${u}" onclick="lightbox(this.src)">`).join("")}</div>`;
+  }
+
+  el.innerHTML = `
+    <div class="msg-header">
+      <div class="msg-avatar">${avatar}</div>
+      <div class="msg-name">${name}</div>
+      <div class="msg-time">${time}</div>
+    </div>
+    <div class="msg-body">${imgsHtml}</div>
+  `;
+  messages.appendChild(el);
+  return el;
+}
+
+// ===== Send =====
 function sendMessage() {
   const text = input.value.trim();
-  if (!text && !pendingImages.length) return;
+  if (!text && !images.length) return;
   if (!ws || ws.readyState !== WebSocket.OPEN) return;
 
-  // Show user message
-  welcome?.remove();
-  const imagesHtml = pendingImages
-    .map((img) => `<img src="${img.url}" alt="attached image">`)
-    .join("");
+  hideEmpty();
+  const imgUrls = images.map((i) => i.url);
+  addMsg("user", text || "(image)", imgUrls.length ? imgUrls : null);
 
-  const msgEl = document.createElement("div");
-  msgEl.className = "message user";
-  msgEl.innerHTML = `
-    <div class="message-role user">You</div>
-    <div class="message-body">
-      ${imagesHtml ? `<div class="message-images">${imagesHtml}</div>` : ""}
-      ${escapeHtml(text).replace(/\n/g, "<br>")}
-    </div>
-  `;
-  chat.appendChild(msgEl);
-  scrollToBottom();
-
-  // Send to server
-  const payload = {
+  ws.send(JSON.stringify({
     type: "message",
     content: text || "Describe this image.",
-    images: pendingImages.map((img) => ({ data: img.data, mime: img.mime })),
-    workingDir: workingDir || undefined,
-    sessionId: currentSessionId || undefined,
-  };
-  ws.send(JSON.stringify(payload));
+    images: images.map((i) => ({ data: i.data, mime: i.mime })),
+    workingDir: cwdInput.value.trim() || undefined,
+    sessionId: sessionId || undefined,
+  }));
 
-  // Reset
+  // Save user message to convo
+  saveConvo();
+
   input.value = "";
   input.style.height = "auto";
   clearImages();
-  currentAssistantEl = null;
-  currentTextAccumulator = "";
-  updateSendBtn();
+  currentEl = null;
+  textBuf = "";
+  updateSend();
 }
 
 function abortMessage() {
-  if (ws && ws.readyState === WebSocket.OPEN) {
+  if (ws?.readyState === WebSocket.OPEN) {
     ws.send(JSON.stringify({ type: "abort" }));
   }
 }
 
-// ===== Image paste =====
+// ===== Images =====
 document.addEventListener("paste", (e) => {
   const items = e.clipboardData?.items;
   if (!items) return;
-
   for (const item of items) {
     if (item.type.startsWith("image/")) {
       e.preventDefault();
       const file = item.getAsFile();
-      if (file) addImageFile(file);
+      if (file) addImage(file);
     }
   }
 });
 
-// Drag and drop
-const inputArea = document.querySelector(".input-area");
-inputArea.addEventListener("dragover", (e) => {
+// Drag & drop on entire main area
+const mainEl = $(".main");
+mainEl.addEventListener("dragover", (e) => { e.preventDefault(); e.currentTarget.style.outline = "2px solid var(--accent)"; });
+mainEl.addEventListener("dragleave", (e) => { e.currentTarget.style.outline = ""; });
+mainEl.addEventListener("drop", (e) => {
   e.preventDefault();
-  inputArea.style.borderColor = "var(--accent)";
-});
-inputArea.addEventListener("dragleave", () => {
-  inputArea.style.borderColor = "";
-});
-inputArea.addEventListener("drop", (e) => {
-  e.preventDefault();
-  inputArea.style.borderColor = "";
-  for (const file of e.dataTransfer.files) {
-    if (file.type.startsWith("image/")) {
-      addImageFile(file);
-    }
+  e.currentTarget.style.outline = "";
+  for (const f of e.dataTransfer.files) {
+    if (f.type.startsWith("image/")) addImage(f);
   }
 });
 
-function addImageFile(file) {
+function handleFileSelect(el) {
+  for (const f of el.files) {
+    if (f.type.startsWith("image/")) addImage(f);
+  }
+  el.value = "";
+}
+
+function addImage(file) {
   const reader = new FileReader();
   reader.onload = () => {
-    const base64 = reader.result.split(",")[1];
-    const url = URL.createObjectURL(file);
-    const img = { data: base64, mime: file.type, url };
-    pendingImages.push(img);
-    renderImageStrip();
-    updateSendBtn();
+    images.push({
+      data: reader.result.split(",")[1],
+      mime: file.type,
+      url: URL.createObjectURL(file),
+    });
+    renderStrip();
+    updateSend();
+    input.focus();
   };
   reader.readAsDataURL(file);
 }
 
-function renderImageStrip() {
-  imageStrip.innerHTML = "";
-  if (!pendingImages.length) {
-    imageStrip.classList.add("hidden");
-    return;
-  }
-  imageStrip.classList.remove("hidden");
-  pendingImages.forEach((img, i) => {
-    const el = document.createElement("div");
-    el.className = "image-preview";
-    el.innerHTML = `
-      <img src="${img.url}" alt="preview">
-      <button class="remove-img" onclick="removeImage(${i})">&times;</button>
-    `;
-    imageStrip.appendChild(el);
-  });
+function renderStrip() {
+  strip.innerHTML = images.map((img, i) => `
+    <div class="img-thumb">
+      <img src="${img.url}">
+      <button class="img-remove" onclick="removeImage(${i})">&times;</button>
+    </div>
+  `).join("");
 }
 
-function removeImage(index) {
-  URL.revokeObjectURL(pendingImages[index].url);
-  pendingImages.splice(index, 1);
-  renderImageStrip();
-  updateSendBtn();
+function removeImage(i) {
+  URL.revokeObjectURL(images[i].url);
+  images.splice(i, 1);
+  renderStrip();
+  updateSend();
 }
 
 function clearImages() {
-  pendingImages.forEach((img) => URL.revokeObjectURL(img.url));
-  pendingImages = [];
-  renderImageStrip();
+  images.forEach((i) => URL.revokeObjectURL(i.url));
+  images = [];
+  renderStrip();
 }
 
-// ===== Session management =====
-async function openSessionPicker() {
-  sessionOverlay.classList.remove("hidden");
-  sessionList.innerHTML = `<div class="session-loading">Loading sessions...</div>`;
-
+// ===== Sessions =====
+async function loadSessions() {
+  sessionList.innerHTML = `<div style="padding:12px;color:var(--text-3);font-size:13px">Loading...</div>`;
   try {
     const res = await fetch("/api/sessions");
-    const sessions = await res.json();
-
-    if (!sessions.length) {
-      sessionList.innerHTML = `<div class="session-loading">No sessions found</div>`;
+    const list = await res.json();
+    if (!list.length) {
+      sessionList.innerHTML = `<div style="padding:12px;color:var(--text-3);font-size:13px">No sessions found. Start chatting to create one.</div>`;
       return;
     }
-
-    sessionList.innerHTML = sessions
-      .map(
-        (s) => `
-      <div class="session-item ${s.id === currentSessionId ? "active" : ""}"
-           onclick="pickSession('${s.id}')">
-        <span class="session-id">${s.id}</span>
-        <span class="session-date">${s.label || ""}</span>
+    sessionList.innerHTML = list.map((s) => `
+      <div class="session-item${s.id === sessionId ? " active" : ""}" onclick="resumeSession('${s.id}')">
+        <span class="sid">${s.id}</span>
+        <span class="meta">${s.label || ""}</span>
       </div>
-    `
-      )
-      .join("");
+    `).join("");
   } catch {
-    sessionList.innerHTML = `<div class="session-loading">Could not load sessions</div>`;
+    sessionList.innerHTML = `<div style="padding:12px;color:var(--text-3);font-size:13px">Could not load sessions</div>`;
   }
 }
 
-function closeSessionPicker() {
-  sessionOverlay.classList.add("hidden");
-}
-
-function pickSession(id) {
-  currentSessionId = id;
-  sessionLabel.textContent = id.slice(0, 8) + "...";
-  closeSessionPicker();
-}
-
-function newSession() {
-  currentSessionId = null;
-  sessionLabel.textContent = "New session";
-  // Clear chat
-  chat.innerHTML = "";
-  currentAssistantEl = null;
-  currentTextAccumulator = "";
-  closeSessionPicker();
-}
-
-function resumeLatest() {
-  // Send a continue flag — server will use --continue
-  currentSessionId = "__latest__";
-  sessionLabel.textContent = "Latest...";
-  closeSessionPicker();
-}
-
-// ===== Working directory =====
-function changeCwd() {
-  const dir = prompt("Working directory:", workingDir);
-  if (dir !== null) {
-    workingDir = dir.trim();
-    cwdLabel.textContent = workingDir
-      ? workingDir.replace(/^.*[/\\]/, "~/.../")
-      : "";
+function resumeSession(id) {
+  sessionId = id;
+  topSession.textContent = id.slice(0, 12) + "...";
+  // Clear messages for the resumed session view
+  clearChat();
+  // Tell server
+  if (ws?.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify({ type: "setSession", sessionId: id }));
   }
+  closeSidebar();
+}
+
+function newConversation() {
+  sessionId = null;
+  topSession.textContent = "New conversation";
+  clearChat();
+  if (ws?.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify({ type: "setSession", sessionId: null }));
+  }
+  closeSidebar();
+  input.focus();
+}
+
+// ===== Conversation persistence =====
+function saveConvo() {
+  if (!sessionId) return;
+  const html = messages.innerHTML;
+  const idx = conversations.findIndex((c) => c.id === sessionId);
+  const entry = {
+    id: sessionId,
+    html,
+    updated: Date.now(),
+    label: sessionId.slice(0, 12),
+  };
+  if (idx >= 0) conversations[idx] = entry;
+  else conversations.unshift(entry);
+  // Keep last 50
+  conversations = conversations.slice(0, 50);
+  try { localStorage.setItem("cc_convos", JSON.stringify(conversations)); } catch { /* quota */ }
+  renderConversationList();
+}
+
+function renderConversationList() {
+  // Show saved convos in sidebar above remote sessions
+  const saved = conversations.slice(0, 20);
+  if (!saved.length) {
+    loadSessions();
+    return;
+  }
+  // Render saved + a divider + remote sessions button
+  sessionList.innerHTML = saved.map((c) => `
+    <div class="session-item${c.id === sessionId ? " active" : ""}" onclick="loadConvo('${c.id}')">
+      <span class="sid">${c.label || c.id.slice(0, 12)}</span>
+      <span class="meta">${timeAgo(c.updated)}</span>
+    </div>
+  `).join("");
+}
+
+function loadConvo(id) {
+  const c = conversations.find((x) => x.id === id);
+  if (!c) return;
+  sessionId = id;
+  topSession.textContent = id.slice(0, 12) + "...";
+  messages.innerHTML = c.html;
+  hideEmpty();
+  if (ws?.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify({ type: "setSession", sessionId: id }));
+  }
+  scroll();
+  closeSidebar();
+}
+
+function timeAgo(ts) {
+  const d = Date.now() - ts;
+  if (d < 60000) return "now";
+  if (d < 3600000) return Math.floor(d / 60000) + "m";
+  if (d < 86400000) return Math.floor(d / 3600000) + "h";
+  return Math.floor(d / 86400000) + "d";
+}
+
+// ===== Lightbox =====
+function lightbox(src) {
+  const lb = document.createElement("div");
+  lb.className = "lightbox";
+  lb.innerHTML = `<img src="${src}">`;
+  lb.onclick = () => lb.remove();
+  document.body.appendChild(lb);
 }
 
 // ===== Helpers =====
-function setStreaming(state) {
-  isStreaming = state;
-  sendBtn.classList.toggle("hidden", state);
-  abortBtn.classList.toggle("hidden", !state);
-  statusDot.classList.toggle("busy", state);
-  input.disabled = state;
-  if (!state) input.focus();
+function setStreaming(on) {
+  streaming = on;
+  sendBtn.classList.toggle("hidden", on);
+  stopBtn.classList.toggle("hidden", !on);
+  statusDot.classList.toggle("busy", on);
+  input.disabled = on;
+  if (!on) input.focus();
 }
 
-function updateSendBtn() {
-  sendBtn.disabled = !input.value.trim() && !pendingImages.length;
+function updateSend() {
+  sendBtn.disabled = !input.value.trim() && !images.length;
 }
 
-function removeThinking() {
-  document.getElementById("thinking")?.remove();
-}
+function killThinking() { document.getElementById("thinking")?.remove(); }
 
-function appendError(msg) {
-  const el = document.createElement("div");
-  el.className = "message assistant";
-  el.innerHTML = `
-    <div class="message-role assistant">Error</div>
-    <div class="message-body" style="border-color: var(--error); color: var(--error);">
-      ${escapeHtml(msg)}
+function hideEmpty() { emptyState?.remove(); }
+
+function clearChat() {
+  messages.innerHTML = `
+    <div class="empty-state" id="empty-state">
+      <div class="empty-icon">
+        <svg width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1" opacity="0.2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+      </div>
+      <h2>What can I help you with?</h2>
+      <p>Ctrl+V to paste images &middot; Enter to send &middot; Shift+Enter for newline</p>
     </div>
   `;
-  chat.appendChild(el);
-  scrollToBottom();
+  currentEl = null;
+  textBuf = "";
 }
 
-function scrollToBottom() {
-  requestAnimationFrame(() => {
-    chat.scrollTop = chat.scrollHeight;
-  });
+function scroll() {
+  requestAnimationFrame(() => { messages.scrollTop = messages.scrollHeight; });
 }
 
-function escapeHtml(str) {
-  const div = document.createElement("div");
-  div.textContent = str;
-  return div.innerHTML;
+function esc(s) {
+  const d = document.createElement("div");
+  d.textContent = s;
+  return d.innerHTML;
 }
 
 function copyCode(btn) {
@@ -440,21 +460,36 @@ function copyCode(btn) {
   });
 }
 
-// ===== Input handling =====
+function toggleSidebar() { sidebar.classList.toggle("open"); }
+function closeSidebar() { sidebar.classList.remove("open"); }
+
+// ===== Input =====
 input.addEventListener("input", () => {
-  // Auto-resize
   input.style.height = "auto";
-  input.style.height = Math.min(input.scrollHeight, 200) + "px";
-  updateSendBtn();
+  input.style.height = Math.min(input.scrollHeight, 180) + "px";
+  updateSend();
 });
 
 input.addEventListener("keydown", (e) => {
-  if (e.key === "Enter" && !e.shiftKey) {
+  if (e.key === "Enter" && !e.shiftKey && !streaming) {
     e.preventDefault();
-    if (!isStreaming) sendMessage();
+    sendMessage();
   }
 });
 
-// ===== Init =====
-connect();
-updateSendBtn();
+// Escape to stop
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && streaming) abortMessage();
+});
+
+// Close lightbox on escape
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape") document.querySelector(".lightbox")?.remove();
+});
+
+// Close sidebar on outside click (mobile)
+document.addEventListener("click", (e) => {
+  if (sidebar.classList.contains("open") && !sidebar.contains(e.target) && e.target.id !== "menu-btn") {
+    closeSidebar();
+  }
+});
