@@ -7,7 +7,9 @@
     "dev": "NO_OPEN=1 tsx watch src/server.ts",
     "start": "tsx src/server.ts",
     "build": "tsc",
-    "pkg": "npm run build && npx pkg dist/server.js --targets node22-win-x64 --output claude-chat.exe --assets public/**/*"
+    "icon": "node build-icon.mjs",
+    "pkg": "npm run build && npm run icon && npx @yao-pkg/pkg dist/server.js --targets node22-win-x64 --output claude-chat.exe --icon icon.ico --no-console --assets public/**/*",
+    "dist": "npm run pkg && echo Built claude-chat.exe — copy with tray.ps1 and start.bat"
   },
   "pkg": {
     "assets": ["public/**/*"],
