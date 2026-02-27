@@ -2,15 +2,16 @@
 let ws = null;
 let reconnectTimer = null;
 let reconnectDelay = 1000;
-let images = []; // { data, mime, url }
+let images = [];
 let streaming = false;
 let currentEl = null;
 let textBuf = "";
 let sessionId = null;
-let conversations = JSON.parse(localStorage.getItem("cc_convos") || "[]");
 let connected = false;
 let serverCwd = "";
-let remoteSessions = []; // cached from /api/sessions
+let sessions = [];
+let refreshInterval = null;
+let view = "sessions"; // "sessions" or "chat"
 
 // ===== DOM refs =====
 const $ = (s) => document.querySelector(s);
@@ -19,13 +20,13 @@ const input = $("#input");
 const sendBtn = $("#send-btn");
 const stopBtn = $("#stop-btn");
 const strip = $("#image-strip");
-const sidebar = $("#sidebar");
 const sessionList = $("#session-list");
 const statusDot = $("#status-dot");
 const statusText = $("#status-text");
 const cwdInput = $("#cwd-input");
 const topSession = $("#topbar-session");
-const emptyState = $("#empty-state");
+const sessionPanel = $("#session-panel");
+const chatPanel = $("#chat-panel");
 
 // ===== Init =====
 marked.setOptions({
@@ -38,80 +39,66 @@ marked.setOptions({
 });
 
 connect();
-loadSessions(); // always load remote sessions on startup
-renderConversationList();
-updateSend();
+loadSessions();
 checkHealth();
+updateSend();
 
-// ===== Health check — verify claude CLI is available =====
+// Auto-refresh sessions every 15 seconds
+refreshInterval = setInterval(() => {
+  if (view === "sessions") loadSessions();
+}, 15000);
+
+// ===== Health check =====
 async function checkHealth() {
   try {
     const res = await fetch("/api/ping");
     const data = await res.json();
     if (!data.claude) {
       const banner = document.createElement("div");
-      banner.className = "msg err";
-      banner.style.cssText = "margin:16px;padding:16px;border:1px solid #e53e3e;border-radius:8px;background:#2d1b1b";
+      banner.className = "error-banner";
       banner.innerHTML = `
-        <h3 style="margin:0 0 8px;color:#fc8181">Claude Code CLI Not Found</h3>
-        <p style="margin:0 0 8px;color:#feb2b2">${data.claudeError || "The claude command is not available on this machine."}</p>
-        <p style="margin:0;color:#a0aec0;font-size:13px">This app requires Claude Code CLI to work. Install it with:<br>
-        <code style="background:#1a1a2e;padding:4px 8px;border-radius:4px;margin-top:4px;display:inline-block">npm install -g @anthropic-ai/claude-code</code></p>
+        <strong>Claude Code CLI not found</strong>
+        <p>${data.claudeError || "Install with: npm i -g @anthropic-ai/claude-code"}</p>
       `;
-      messages.prepend(banner);
-      input.placeholder = "Claude CLI not installed — see error above";
+      document.querySelector(".app").prepend(banner);
       input.disabled = true;
     }
   } catch {}
 }
 
-// ===== WebSocket with aggressive auto-reconnect =====
+// ===== WebSocket =====
 function connect() {
   if (ws && (ws.readyState === WebSocket.CONNECTING || ws.readyState === WebSocket.OPEN)) return;
-
   statusText.textContent = "Connecting...";
   statusDot.classList.remove("connected", "busy");
 
   const proto = location.protocol === "https:" ? "wss:" : "ws:";
-  try {
-    ws = new WebSocket(`${proto}//${location.host}/ws`);
-  } catch {
-    scheduleReconnect();
-    return;
-  }
+  try { ws = new WebSocket(`${proto}//${location.host}/ws`); }
+  catch { scheduleReconnect(); return; }
 
   ws.onopen = () => {
     connected = true;
     reconnectDelay = 1000;
     statusDot.classList.add("connected");
-    statusDot.classList.remove("busy");
     statusText.textContent = "Connected";
     if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
-    if (sessionId) {
-      ws.send(JSON.stringify({ type: "setSession", sessionId }));
-    }
+    if (sessionId) ws.send(JSON.stringify({ type: "setSession", sessionId }));
   };
 
   ws.onclose = () => {
     connected = false;
     statusDot.classList.remove("connected", "busy");
-    statusText.textContent = "Disconnected \u2014 click to reconnect";
+    statusText.textContent = "Disconnected";
     scheduleReconnect();
   };
 
   ws.onerror = () => {};
-
-  ws.onmessage = (e) => {
-    try { handleEvent(JSON.parse(e.data)); } catch {}
-  };
+  ws.onmessage = (e) => { try { handleEvent(JSON.parse(e.data)); } catch {} };
 }
 
 function scheduleReconnect() {
   if (reconnectTimer) return;
-  reconnectTimer = setTimeout(() => {
-    reconnectTimer = null;
-    connect();
-  }, reconnectDelay);
+  reconnectTimer = setTimeout(() => { reconnectTimer = null; connect(); }, reconnectDelay);
   reconnectDelay = Math.min(reconnectDelay * 2, 30000);
 }
 
@@ -120,36 +107,21 @@ function forceReconnect() {
   if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
   reconnectDelay = 1000;
   if (ws) { try { ws.close(); } catch {} ws = null; }
-  statusText.textContent = "Reconnecting...";
   connect();
 }
 
-// Keep-alive: check every 30s
 setInterval(() => {
-  if (!ws || ws.readyState !== WebSocket.OPEN) {
-    if (!reconnectTimer) connect();
-  }
+  if (!ws || ws.readyState !== WebSocket.OPEN) { if (!reconnectTimer) connect(); }
 }, 30000);
 
-// Reconnect on tab focus
 document.addEventListener("visibilitychange", () => {
-  if (!document.hidden && (!ws || ws.readyState !== WebSocket.OPEN)) {
-    forceReconnect();
-  }
-});
-
-window.addEventListener("focus", () => {
-  if (!ws || ws.readyState !== WebSocket.OPEN) forceReconnect();
+  if (!document.hidden && (!ws || ws.readyState !== WebSocket.OPEN)) forceReconnect();
 });
 
 // ===== Event handler =====
 function handleEvent(ev) {
-  // Server sends cwd/platform on connect
   if (ev.type === "connected") {
-    if (ev.cwd && !cwdInput.value) {
-      serverCwd = ev.cwd;
-      cwdInput.value = ev.cwd;
-    }
+    if (ev.cwd && !cwdInput.value) { serverCwd = ev.cwd; cwdInput.value = ev.cwd; }
     return;
   }
 
@@ -168,33 +140,21 @@ function handleEvent(ev) {
 
   if (ev.type === "stream_event") {
     const e = ev.event;
-
-    if (e?.type === "message_start") {
-      killThinking();
-      ensureBubble();
-    }
-
+    if (e?.type === "message_start") { killThinking(); ensureBubble(); }
     if (e?.type === "content_block_delta" && e?.delta?.type === "text_delta") {
-      killThinking();
-      ensureBubble();
+      killThinking(); ensureBubble();
       textBuf += e.delta.text;
-      renderBubble();
-      scroll();
+      renderBubble(); scroll();
     }
-
     if (e?.type === "content_block_start" && e?.content_block?.type === "tool_use") {
-      killThinking();
-      ensureBubble();
+      killThinking(); ensureBubble();
       const name = e.content_block.name || "Tool";
-      const id = e.content_block.id || "";
       const t = document.createElement("span");
       t.className = "tool-ind";
-      t.dataset.toolId = id;
       t.innerHTML = `<span class="spin"></span>${esc(name)}`;
       currentEl.querySelector(".msg-body").appendChild(t);
       scroll();
     }
-
     if (e?.type === "content_block_stop" && currentEl) {
       const pending = currentEl.querySelectorAll(".tool-ind:not(.done)");
       if (pending.length) pending[pending.length - 1].classList.add("done");
@@ -203,26 +163,16 @@ function handleEvent(ev) {
 
   if (ev.session_id && ev.session_id !== sessionId) {
     sessionId = ev.session_id;
-    topSession.textContent = sessionId.slice(0, 12) + "...";
-    saveConvo();
+    topSession.textContent = sessionId.slice(0, 8);
   }
 
-  if (ev.type === "done") {
-    killThinking();
-    setStreaming(false);
-    saveConvo();
-  }
-
+  if (ev.type === "done") { killThinking(); setStreaming(false); }
   if (ev.type === "error") {
-    killThinking();
-    setStreaming(false);
+    killThinking(); setStreaming(false);
     addMsg("assistant", `Error: ${ev.message}`, null, "err");
   }
-
   if (ev.type === "result" && ev.result && !textBuf) {
-    ensureBubble();
-    textBuf = ev.result;
-    renderBubble();
+    ensureBubble(); textBuf = ev.result; renderBubble();
   }
 }
 
@@ -239,13 +189,11 @@ function renderBubble() {
   const body = currentEl.querySelector(".msg-body");
   const tools = body.querySelectorAll(".tool-ind");
   const toolsHtml = Array.from(tools).map((t) => t.outerHTML).join("");
-
   let html = marked.parse(textBuf);
   html = html.replace(/<pre><code class="language-(\w+)">/g,
     `<pre><div class="code-head"><span>$1</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div><code class="language-$1">`);
   html = html.replace(/<pre><code>(?!<)/g,
     `<pre><div class="code-head"><span>code</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div><code>`);
-
   body.innerHTML = html + toolsHtml;
 }
 
@@ -253,30 +201,23 @@ function addMsg(role, text, msgImages, cls) {
   hideEmpty();
   const el = addMsgEl(role, msgImages, cls);
   el.querySelector(".msg-body").innerHTML = role === "user"
-    ? esc(text).replace(/\n/g, "<br>")
-    : marked.parse(text);
+    ? esc(text).replace(/\n/g, "<br>") : marked.parse(text);
   scroll();
   return el;
 }
 
 function addMsgEl(role, msgImages, cls) {
   const time = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-  const avatar = role === "user" ? "Y" : "C";
-  const name = role === "user" ? "You" : "Claude";
-
   const el = document.createElement("div");
   el.className = `msg ${role}${cls ? " " + cls : ""}`;
-
   let imgsHtml = "";
   if (msgImages?.length) {
-    imgsHtml = `<div class="msg-images">${msgImages.map((u) => `<img src="${u}" onclick="lightbox(this.src)">`).join("")}</div>`;
+    imgsHtml = `<div class="msg-images">${msgImages.map((u) => `<img src="${u}">`).join("")}</div>`;
   }
-
   el.innerHTML = `
     <div class="msg-header">
-      <div class="msg-avatar">${avatar}</div>
-      <div class="msg-name">${name}</div>
-      <div class="msg-time">${time}</div>
+      <span class="msg-name">${role === "user" ? "You" : "Claude"}</span>
+      <span class="msg-time">${time}</span>
     </div>
     <div class="msg-body">${imgsHtml}</div>
   `;
@@ -291,8 +232,7 @@ function sendMessage() {
   if (!ws || ws.readyState !== WebSocket.OPEN) return;
 
   hideEmpty();
-  const imgUrls = images.map((i) => i.url);
-  addMsg("user", text || "(image)", imgUrls.length ? imgUrls : null);
+  addMsg("user", text || "(image)", images.length ? images.map((i) => i.url) : null);
 
   ws.send(JSON.stringify({
     type: "message",
@@ -301,8 +241,6 @@ function sendMessage() {
     workingDir: cwdInput.value.trim() || undefined,
     sessionId: sessionId || undefined,
   }));
-
-  saveConvo();
 
   input.value = "";
   input.style.height = "auto";
@@ -313,13 +251,12 @@ function sendMessage() {
 }
 
 function abortMessage() {
-  if (ws?.readyState === WebSocket.OPEN) {
-    ws.send(JSON.stringify({ type: "abort" }));
-  }
+  if (ws?.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: "abort" }));
 }
 
 // ===== Images =====
 document.addEventListener("paste", (e) => {
+  if (view !== "chat") return;
   const items = e.clipboardData?.items;
   if (!items) return;
   for (const item of items) {
@@ -331,188 +268,133 @@ document.addEventListener("paste", (e) => {
   }
 });
 
-const mainEl = $(".main");
-mainEl.addEventListener("dragover", (e) => { e.preventDefault(); e.currentTarget.style.outline = "2px solid var(--accent)"; });
-mainEl.addEventListener("dragleave", (e) => { e.currentTarget.style.outline = ""; });
-mainEl.addEventListener("drop", (e) => {
-  e.preventDefault();
-  e.currentTarget.style.outline = "";
-  for (const f of e.dataTransfer.files) {
-    if (f.type.startsWith("image/")) addImage(f);
-  }
-});
-
 function handleFileSelect(el) {
-  for (const f of el.files) {
-    if (f.type.startsWith("image/")) addImage(f);
-  }
+  for (const f of el.files) { if (f.type.startsWith("image/")) addImage(f); }
   el.value = "";
 }
 
 function addImage(file) {
   const reader = new FileReader();
   reader.onload = () => {
-    images.push({
-      data: reader.result.split(",")[1],
-      mime: file.type,
-      url: URL.createObjectURL(file),
-    });
-    renderStrip();
-    updateSend();
-    input.focus();
+    images.push({ data: reader.result.split(",")[1], mime: file.type, url: URL.createObjectURL(file) });
+    renderStrip(); updateSend();
   };
   reader.readAsDataURL(file);
 }
 
 function renderStrip() {
   strip.innerHTML = images.map((img, i) => `
-    <div class="img-thumb">
-      <img src="${img.url}">
+    <div class="img-thumb"><img src="${img.url}">
       <button class="img-remove" onclick="removeImage(${i})">&times;</button>
     </div>
   `).join("");
 }
 
-function removeImage(i) {
-  URL.revokeObjectURL(images[i].url);
-  images.splice(i, 1);
-  renderStrip();
-  updateSend();
-}
-
-function clearImages() {
-  images.forEach((i) => URL.revokeObjectURL(i.url));
-  images = [];
-  renderStrip();
-}
+function removeImage(i) { URL.revokeObjectURL(images[i].url); images.splice(i, 1); renderStrip(); updateSend(); }
+function clearImages() { images.forEach((i) => URL.revokeObjectURL(i.url)); images = []; renderStrip(); }
 
 // ===== Sessions =====
 async function loadSessions() {
   try {
     const res = await fetch("/api/sessions");
-    remoteSessions = await res.json();
-  } catch {
-    remoteSessions = [];
-  }
-  renderConversationList();
+    sessions = await res.json();
+  } catch { sessions = []; }
+  renderSessions();
 }
 
-function resumeSession(id) {
-  // When clicking a remote session, also set cwd from that session
-  const remote = remoteSessions.find((s) => s.id === id);
-  if (remote?.cwd) cwdInput.value = remote.cwd;
+function renderSessions() {
+  if (!sessions.length) {
+    sessionList.innerHTML = `
+      <div class="no-sessions">
+        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" opacity="0.25">
+          <rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/>
+        </svg>
+        <p>No active sessions</p>
+        <span>Sessions from the last 2 hours will appear here</span>
+      </div>
+    `;
+    return;
+  }
 
+  sessionList.innerHTML = sessions.map((s) => {
+    const isActive = s.id === sessionId;
+    const ago = timeAgo(s.lastActivity);
+    const roleLabel = s.lastMessageRole === "user" ? "You" : "Claude";
+    const preview = truncate(stripMarkdown(s.lastMessage), 100);
+
+    return `
+      <div class="session-card${isActive ? " active" : ""}" onclick="openSession('${escAttr(s.id)}', '${escAttr(s.cwd)}')">
+        <div class="card-top">
+          <span class="card-project">${esc(s.project)}</span>
+          <span class="card-time">${ago}</span>
+        </div>
+        <div class="card-preview">
+          <span class="card-role">${roleLabel}</span>
+          <span class="card-text">${esc(preview)}</span>
+        </div>
+        <div class="card-bottom">
+          <span class="card-count">${s.messageCount} msg</span>
+          <span class="card-id">${s.id.slice(0, 8)}</span>
+        </div>
+      </div>
+    `;
+  }).join("");
+}
+
+function openSession(id, cwd) {
   sessionId = id;
-  topSession.textContent = id.slice(0, 12) + "...";
+  if (cwd) cwdInput.value = cwd;
+  topSession.textContent = sessions.find(s => s.id === id)?.project || id.slice(0, 8);
+  switchView("chat");
   clearChat();
   if (ws?.readyState === WebSocket.OPEN) {
     ws.send(JSON.stringify({ type: "setSession", sessionId: id }));
   }
-  closeSidebar();
+  input.focus();
+  renderSessions();
+}
+
+function showSessions() {
+  switchView("sessions");
+  loadSessions();
 }
 
 function newConversation() {
   sessionId = null;
-  topSession.textContent = "New conversation";
+  topSession.textContent = "New";
+  switchView("chat");
   clearChat();
   if (ws?.readyState === WebSocket.OPEN) {
     ws.send(JSON.stringify({ type: "setSession", sessionId: null }));
   }
-  closeSidebar();
   input.focus();
 }
 
-// ===== Conversation persistence =====
-function saveConvo() {
-  if (!sessionId) return;
-  const html = messages.innerHTML;
-  const idx = conversations.findIndex((c) => c.id === sessionId);
-  const entry = {
-    id: sessionId,
-    html,
-    updated: Date.now(),
-    label: sessionId.slice(0, 12),
-  };
-  if (idx >= 0) conversations[idx] = entry;
-  else conversations.unshift(entry);
-  conversations = conversations.slice(0, 50);
-  try { localStorage.setItem("cc_convos", JSON.stringify(conversations)); } catch {}
-  renderConversationList();
+function switchView(v) {
+  view = v;
+  sessionPanel.classList.toggle("hidden", v !== "sessions");
+  chatPanel.classList.toggle("hidden", v !== "chat");
 }
 
-function renderConversationList() {
-  let html = "";
-
-  // Local conversations (from this browser)
-  const saved = conversations.slice(0, 20);
-  if (saved.length) {
-    html += `<div class="sidebar-label" style="padding:8px 12px 4px;font-size:11px;text-transform:uppercase;color:var(--text-3)">Local</div>`;
-    html += saved.map((c) => `
-      <div class="session-item${c.id === sessionId ? " active" : ""}" onclick="loadConvo('${c.id}')">
-        <span class="sid">${c.label || c.id.slice(0, 12)}</span>
-        <span class="meta">${timeAgo(c.updated)}</span>
-      </div>
-    `).join("");
-  }
-
-  // Remote sessions (from filesystem scan)
-  const localIds = new Set(saved.map((c) => c.id));
-  const remoteOnly = remoteSessions.filter((s) => !localIds.has(s.id));
-  if (remoteOnly.length) {
-    html += `<div class="sidebar-label" style="padding:12px 12px 4px;font-size:11px;text-transform:uppercase;color:var(--text-3);border-top:1px solid var(--border)">Sessions on disk</div>`;
-    html += remoteOnly.slice(0, 30).map((s) => `
-      <div class="session-item${s.id === sessionId ? " active" : ""}" onclick="resumeSession('${esc(s.id)}')">
-        <span class="sid" title="${esc(s.id)}">${esc(s.label || s.id.slice(0, 12))}</span>
-        <span class="meta">${esc(shortPath(s.cwd))}</span>
-      </div>
-    `).join("");
-  }
-
-  if (!html) {
-    html = `<div style="padding:12px;color:var(--text-3);font-size:13px">No sessions yet. Start chatting!</div>`;
-  }
-
-  sessionList.innerHTML = html;
-}
-
-function shortPath(p) {
-  if (!p) return "";
-  const parts = p.split(/[/\\]/);
-  return parts.slice(-2).join("/");
-}
-
-function loadConvo(id) {
-  const c = conversations.find((x) => x.id === id);
-  if (!c) return;
-  sessionId = id;
-  topSession.textContent = id.slice(0, 12) + "...";
-  messages.innerHTML = c.html;
-  hideEmpty();
-  if (ws?.readyState === WebSocket.OPEN) {
-    ws.send(JSON.stringify({ type: "setSession", sessionId: id }));
-  }
-  scroll();
-  closeSidebar();
-}
-
+// ===== Helpers =====
 function timeAgo(ts) {
-  const d = Date.now() - ts;
+  const d = Date.now() - new Date(ts).getTime();
   if (d < 60000) return "now";
   if (d < 3600000) return Math.floor(d / 60000) + "m";
   if (d < 86400000) return Math.floor(d / 3600000) + "h";
   return Math.floor(d / 86400000) + "d";
 }
 
-// ===== Lightbox =====
-function lightbox(src) {
-  const lb = document.createElement("div");
-  lb.className = "lightbox";
-  lb.innerHTML = `<img src="${src}">`;
-  lb.onclick = () => lb.remove();
-  document.body.appendChild(lb);
+function truncate(s, max) {
+  if (!s || s.length <= max) return s || "";
+  return s.slice(0, max).trim() + "...";
 }
 
-// ===== Helpers =====
+function stripMarkdown(s) {
+  if (!s) return "";
+  return s.replace(/[#*_`~\[\]()>]/g, "").replace(/\n+/g, " ").trim();
+}
+
 function setStreaming(on) {
   streaming = on;
   sendBtn.classList.toggle("hidden", on);
@@ -522,37 +404,24 @@ function setStreaming(on) {
   if (!on) input.focus();
 }
 
-function updateSend() {
-  sendBtn.disabled = !input.value.trim() && !images.length;
-}
-
+function updateSend() { sendBtn.disabled = !input.value.trim() && !images.length; }
 function killThinking() { document.getElementById("thinking")?.remove(); }
-
-function hideEmpty() { emptyState?.remove(); }
+function hideEmpty() { document.getElementById("empty-state")?.remove(); }
 
 function clearChat() {
   messages.innerHTML = `
     <div class="empty-state" id="empty-state">
-      <div class="empty-icon">
-        <svg width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1" opacity="0.2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
-      </div>
-      <h2>What can I help you with?</h2>
-      <p>Ctrl+V to paste images &middot; Enter to send &middot; Shift+Enter for newline</p>
+      <p>Send a message to continue this session</p>
     </div>
   `;
   currentEl = null;
   textBuf = "";
 }
 
-function scroll() {
-  requestAnimationFrame(() => { messages.scrollTop = messages.scrollHeight; });
-}
+function scroll() { requestAnimationFrame(() => { messages.scrollTop = messages.scrollHeight; }); }
 
-function esc(s) {
-  const d = document.createElement("div");
-  d.textContent = s;
-  return d.innerHTML;
-}
+function esc(s) { const d = document.createElement("div"); d.textContent = s; return d.innerHTML; }
+function escAttr(s) { return s.replace(/'/g, "\\'").replace(/"/g, "&quot;"); }
 
 function copyCode(btn) {
   const code = btn.closest("pre").querySelector("code");
@@ -562,9 +431,6 @@ function copyCode(btn) {
   });
 }
 
-function toggleSidebar() { sidebar.classList.toggle("open"); }
-function closeSidebar() { sidebar.classList.remove("open"); }
-
 // ===== Input =====
 input.addEventListener("input", () => {
   input.style.height = "auto";
@@ -573,19 +439,10 @@ input.addEventListener("input", () => {
 });
 
 input.addEventListener("keydown", (e) => {
-  if (e.key === "Enter" && !e.shiftKey && !streaming) {
-    e.preventDefault();
-    sendMessage();
-  }
+  if (e.key === "Enter" && !e.shiftKey && !streaming) { e.preventDefault(); sendMessage(); }
 });
 
 document.addEventListener("keydown", (e) => {
   if (e.key === "Escape" && streaming) abortMessage();
-  if (e.key === "Escape") document.querySelector(".lightbox")?.remove();
-});
-
-document.addEventListener("click", (e) => {
-  if (sidebar.classList.contains("open") && !sidebar.contains(e.target) && e.target.id !== "menu-btn") {
-    closeSidebar();
-  }
+  if (e.key === "Escape" && view === "chat" && !streaming) showSessions();
 });

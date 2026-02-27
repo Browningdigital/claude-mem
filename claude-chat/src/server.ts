@@ -5,10 +5,9 @@ import { serve } from "@hono/node-server";
 import type { WSContext } from "hono/ws";
 import { exec, execFile } from "node:child_process";
 import { promisify } from "node:util";
-import { readdir, open, stat } from "node:fs/promises";
+import { readdir, stat, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { homedir } from "node:os";
-import { createReadStream } from "node:fs";
 import { ClaudeBridge } from "./claude-bridge.js";
 
 const execFileAsync = promisify(execFile);
@@ -18,96 +17,177 @@ const { injectWebSocket, upgradeWebSocket } = createNodeWebSocket({ app });
 
 const bridges = new Map<WSContext, ClaudeBridge>();
 
-// ===== Session scanning =====
+// ===== Session scanning — last 2 hours, with last message =====
 
-interface SessionInfo {
+interface ActiveSession {
   id: string;
-  label: string;
-  date: string;
+  project: string;
   cwd: string;
+  lastMessage: string;
+  lastMessageRole: "user" | "assistant";
+  lastActivity: string; // ISO timestamp
+  messageCount: number;
 }
 
-/** Read just the first line of a file (efficient — doesn't load the whole thing) */
-async function readFirstLine(filePath: string): Promise<string> {
-  return new Promise((resolve, reject) => {
-    let data = "";
-    const stream = createReadStream(filePath, { encoding: "utf-8", highWaterMark: 2048 });
-    stream.on("data", (chunk: string) => {
-      data += chunk;
-      const nl = data.indexOf("\n");
-      if (nl !== -1) {
-        stream.destroy();
-        resolve(data.slice(0, nl));
-      }
-    });
-    stream.on("end", () => resolve(data));
-    stream.on("error", reject);
-  });
-}
+const TWO_HOURS_MS = 2 * 60 * 60 * 1000;
 
 /** Decode a Claude project folder name back to a path */
 function decodeProjectDir(name: string): string {
-  // Claude encodes paths like: -home-user-project -> /home/user/project
-  // On Windows: C-Users-ssoif-project -> C:\Users\ssoif\project
   if (/^[A-Z]-/.test(name)) {
-    // Windows: starts with drive letter
     const parts = name.split("-");
     return parts[0] + ":\\" + parts.slice(1).join("\\");
   }
-  // Unix: leading dash = /
   return name.replace(/^-/, "/").replace(/-/g, "/");
 }
 
-async function scanSessionFiles(): Promise<SessionInfo[]> {
-  const sessions: SessionInfo[] = [];
+/** Extract project name from a decoded path */
+function projectName(decodedPath: string): string {
+  const parts = decodedPath.split(/[/\\]/).filter(Boolean);
+  return parts[parts.length - 1] || decodedPath;
+}
+
+/** Extract text content from a transcript message */
+function extractText(content: unknown): string {
+  if (typeof content === "string") return content;
+  if (Array.isArray(content)) {
+    return content
+      .filter((c: any) => c.type === "text")
+      .map((c: any) => c.text)
+      .join("\n");
+  }
+  return "";
+}
+
+/** Strip system-reminder tags and clean whitespace */
+function cleanText(text: string): string {
+  return text
+    .replace(/<system-reminder>[\s\S]*?<\/system-reminder>/g, "")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+/** Read last N lines from a file efficiently (read from end) */
+async function readLastLines(filePath: string, maxLines: number): Promise<string[]> {
+  const content = await readFile(filePath, "utf-8");
+  const lines = content.trim().split("\n");
+  return lines.slice(-maxLines);
+}
+
+/** Scan for sessions active in the last 2 hours with last message */
+async function scanActiveSessions(): Promise<ActiveSession[]> {
+  const sessions: ActiveSession[] = [];
   const claudeDir = join(homedir(), ".claude", "projects");
+  const cutoff = Date.now() - TWO_HOURS_MS;
 
+  let projects: string[];
   try {
-    const projects = await readdir(claudeDir);
-    for (const project of projects) {
-      const projectDir = join(claudeDir, project);
-      let files: string[];
-      try {
-        files = await readdir(projectDir);
-      } catch {
-        continue;
-      }
-
-      const jsonlFiles = files.filter((f) => f.endsWith(".jsonl"));
-
-      for (const file of jsonlFiles) {
-        try {
-          const filePath = join(projectDir, file);
-          // Get file mtime for sorting (fast, no content read)
-          const fstat = await stat(filePath);
-          // Read only first line
-          const firstLine = await readFirstLine(filePath);
-          if (!firstLine) continue;
-
-          const entry = JSON.parse(firstLine);
-          const sessionId = entry.sessionId || file.replace(".jsonl", "");
-          const cwd = entry.cwd || decodeProjectDir(project);
-          const date = entry.timestamp || fstat.mtime.toISOString();
-          const slug = entry.slug || "";
-          const cwdShort = cwd.split(/[/\\]/).pop() || cwd;
-          const label = slug || cwdShort;
-
-          sessions.push({ id: sessionId, label, date, cwd });
-        } catch {
-          // corrupt or unreadable, skip
-        }
-      }
-    }
+    projects = await readdir(claudeDir);
   } catch {
-    // ~/.claude/projects doesn't exist
+    return [];
   }
 
-  // Sort newest first by date
+  for (const project of projects) {
+    const projectDir = join(claudeDir, project);
+    let files: string[];
+    try {
+      files = await readdir(projectDir);
+    } catch {
+      continue;
+    }
+
+    const jsonlFiles = files.filter((f) => f.endsWith(".jsonl"));
+
+    for (const file of jsonlFiles) {
+      try {
+        const filePath = join(projectDir, file);
+        const fstat = await stat(filePath);
+
+        // Skip files not modified in last 2 hours
+        if (fstat.mtime.getTime() < cutoff) continue;
+
+        // Read last 50 lines to find last meaningful message
+        const lastLines = await readLastLines(filePath, 50);
+        if (!lastLines.length) continue;
+
+        // Parse first line for session metadata
+        let sessionId = file.replace(".jsonl", "");
+        const cwd = decodeProjectDir(project);
+
+        try {
+          const firstContent = await readFile(filePath, "utf-8");
+          const firstLine = firstContent.split("\n")[0];
+          if (firstLine) {
+            const first = JSON.parse(firstLine);
+            if (first.sessionId) sessionId = first.sessionId;
+          }
+        } catch { /* use filename as ID */ }
+
+        // Walk backward through last lines to find last user and assistant messages
+        let lastMessage = "";
+        let lastMessageRole: "user" | "assistant" = "assistant";
+        let lastTimestamp = fstat.mtime.toISOString();
+        let messageCount = 0;
+
+        for (let i = lastLines.length - 1; i >= 0; i--) {
+          try {
+            const entry = JSON.parse(lastLines[i]);
+
+            if (entry.timestamp) lastTimestamp = entry.timestamp;
+
+            if (entry.type === "user" || entry.type === "assistant") {
+              messageCount++;
+              if (!lastMessage && entry.message?.content) {
+                const text = cleanText(extractText(entry.message.content));
+                if (text) {
+                  lastMessage = text;
+                  lastMessageRole = entry.type;
+                }
+              }
+            }
+          } catch { /* skip unparseable lines */ }
+        }
+
+        // Count total messages (rough — scan all lines for type)
+        try {
+          const fullContent = await readFile(filePath, "utf-8");
+          const allLines = fullContent.trim().split("\n");
+          messageCount = 0;
+          for (const line of allLines) {
+            try {
+              const e = JSON.parse(line);
+              if (e.type === "user" || e.type === "assistant") messageCount++;
+            } catch { /* skip */ }
+          }
+        } catch { /* use partial count */ }
+
+        if (!lastMessage) lastMessage = "(no messages yet)";
+
+        // Truncate preview
+        if (lastMessage.length > 200) {
+          lastMessage = lastMessage.slice(0, 200) + "...";
+        }
+
+        sessions.push({
+          id: sessionId,
+          project: projectName(cwd),
+          cwd,
+          lastMessage,
+          lastMessageRole,
+          lastActivity: lastTimestamp,
+          messageCount,
+        });
+      } catch {
+        // corrupt or unreadable, skip
+      }
+    }
+  }
+
+  // Sort newest first
   sessions.sort(
-    (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
+    (a, b) => new Date(b.lastActivity).getTime() - new Date(a.lastActivity).getTime()
   );
 
-  // Dedupe by session ID (keep newest)
+  // Dedupe by session ID
   const seen = new Set<string>();
   return sessions.filter((s) => {
     if (seen.has(s.id)) return false;
@@ -118,45 +198,15 @@ async function scanSessionFiles(): Promise<SessionInfo[]> {
 
 // ===== API Routes =====
 
-// List sessions — try CLI first, fall back to filesystem scan
 app.get("/api/sessions", async (c) => {
-  // Method 1: CLI (with timeout so it doesn't hang)
   try {
-    const { stdout } = await execFileAsync(
-      "claude",
-      ["sessions", "list", "--output-format", "json"],
-      {
-        env: { ...process.env, CLAUDECODE: "" },
-        timeout: 5000,
-      }
-    );
-    const parsed = JSON.parse(stdout);
-    if (Array.isArray(parsed) && parsed.length > 0) {
-      return c.json(
-        parsed.map((s: Record<string, unknown>) => ({
-          id: s.id || s.session_id,
-          label: s.label || s.title || s.cwd || "",
-          date: s.date || s.created_at || "",
-          cwd: s.cwd || "",
-        }))
-      );
-    }
+    const sessions = await scanActiveSessions();
+    return c.json(sessions);
   } catch {
-    // CLI failed or timed out, try filesystem
+    return c.json([]);
   }
-
-  // Method 2: Filesystem scan
-  try {
-    const sessions = await scanSessionFiles();
-    if (sessions.length) return c.json(sessions);
-  } catch {
-    // scan failed
-  }
-
-  return c.json([]);
 });
 
-// Server info — cwd and homedir for the UI
 app.get("/api/info", (c) =>
   c.json({
     cwd: process.cwd(),
@@ -165,7 +215,6 @@ app.get("/api/info", (c) =>
   })
 );
 
-// Health check — also verifies claude CLI is reachable
 app.get("/api/ping", async (c) => {
   let claudeOk = false;
   let claudeVersion = "";
@@ -276,7 +325,7 @@ app.get(
   }))
 );
 
-// Static files — AFTER api routes so they don't shadow
+// Static files
 app.use("/*", serveStatic({ root: "./public" }));
 
 const PORT = parseInt(process.env.PORT || "3456");
