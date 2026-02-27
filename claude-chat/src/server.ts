@@ -3,7 +3,7 @@ import { serveStatic } from "@hono/node-server/serve-static";
 import { createNodeWebSocket } from "@hono/node-ws";
 import { serve } from "@hono/node-server";
 import type { WSContext } from "hono/ws";
-import { execFile } from "node:child_process";
+import { exec, execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { readdir, open, stat } from "node:fs/promises";
 import { join } from "node:path";
@@ -286,16 +286,13 @@ const server = serve({ fetch: app.fetch, port: PORT }, (info) => {
 
   if (process.env.NO_OPEN !== "1") {
     const url = `http://localhost:${info.port}`;
-    import("node:child_process").then(({ exec }) => {
-      if (process.platform === "win32") {
-        // "start" on Windows needs empty title arg, then the URL
-        exec(`start "" "${url}"`);
-      } else if (process.platform === "darwin") {
-        exec(`open "${url}"`);
-      } else {
-        exec(`xdg-open "${url}"`);
-      }
-    });
+    if (process.platform === "win32") {
+      exec(`start "" "${url}"`);
+    } else if (process.platform === "darwin") {
+      exec(`open "${url}"`);
+    } else {
+      exec(`xdg-open "${url}"`);
+    }
   }
 });
 
