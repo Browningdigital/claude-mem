@@ -8,6 +8,8 @@
  *   - Twitter/X (OAuth 1.0a — proper HMAC-SHA1 signature)
  *   - LinkedIn (Community Management API v2 — /rest/posts)
  *   - Threads (Meta Graph API — two-step container + publish)
+ *   - Facebook Pages (Graph API — page feed posts)
+ *   - Instagram (Graph API — two-step media container + publish, requires image/video)
  *
  * Runs on a cron trigger every 15 minutes.
  * Each run processes up to 5 queued items.
@@ -16,6 +18,8 @@
  *   - twitter_credentials: { api_key, api_secret, access_token, access_secret }
  *   - linkedin_credentials: { access_token, person_urn }
  *   - threads_credentials: { app_id, app_secret, user_access_token, threads_user_id }
+ *   - facebook_credentials: { page_access_token, page_id }
+ *   - instagram_credentials: { access_token, ig_user_id }
  *
  * Deploy: cd cloud-node/worker && wrangler deploy -c wrangler-poster.toml
  * Secrets: SUPABASE_URL, SUPABASE_KEY, POSTER_AUTH_TOKEN
@@ -67,10 +71,22 @@ interface ThreadsCreds {
   threads_user_id: string;
 }
 
+interface FacebookCreds {
+  page_access_token: string;
+  page_id: string;
+}
+
+interface InstagramCreds {
+  access_token: string;
+  ig_user_id: string;  // Instagram Business account ID
+}
+
 interface PlatformCredentials {
   twitter?: TwitterCreds;
   linkedin?: LinkedInCreds;
   threads?: ThreadsCreds;
+  facebook?: FacebookCreds;
+  instagram?: InstagramCreds;
 }
 
 export default {
@@ -145,6 +161,14 @@ async function processQueue(env: Env): Promise<{ processed: number; results: any
         case 'threads':
           postResult = await postToThreads(item, creds.threads);
           break;
+        case 'facebook':
+        case 'fb':
+          postResult = await postToFacebook(item, creds.facebook);
+          break;
+        case 'instagram':
+        case 'ig':
+          postResult = await postToInstagram(item, creds.instagram);
+          break;
         default:
           postResult = { success: false, error: `Unsupported platform: ${item.platform}` };
       }
@@ -162,6 +186,12 @@ async function processQueue(env: Env): Promise<{ processed: number; results: any
             break;
           case 'threads':
             postResult = await postToThreads(item, creds.threads);
+            break;
+          case 'facebook': case 'fb':
+            postResult = await postToFacebook(item, creds.facebook);
+            break;
+          case 'instagram': case 'ig':
+            postResult = await postToInstagram(item, creds.instagram);
             break;
         }
       }
@@ -524,6 +554,190 @@ function formatForThreads(item: QueueItem): string {
   return text;
 }
 
+// ══════════════════════════════════════
+// FACEBOOK PAGES — Graph API
+// ══════════════════════════════════════
+
+async function postToFacebook(item: QueueItem, creds?: FacebookCreds): Promise<PostResult> {
+  if (!creds?.page_access_token || !creds?.page_id) {
+    return {
+      success: false,
+      error: 'Facebook credentials incomplete. Need page_access_token and page_id in claude_system_state facebook_credentials.',
+    };
+  }
+
+  const message = formatForFacebook(item);
+
+  // Build request body — support link posts if metadata has a URL
+  const body: Record<string, string> = {
+    message,
+    access_token: creds.page_access_token,
+  };
+
+  if (item.metadata?.link_url) {
+    body.link = item.metadata.link_url;
+  }
+
+  const params = new URLSearchParams(body);
+
+  const response = await fetch(
+    `https://graph.facebook.com/v19.0/${creds.page_id}/feed`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: params.toString(),
+    },
+  );
+
+  if (!response.ok) {
+    const err = await response.text();
+    if (response.status === 429) {
+      return { success: false, error: `Facebook rate limit hit. Retry later. ${err.substring(0, 100)}` };
+    }
+    if (response.status === 401 || response.status === 403) {
+      return {
+        success: false,
+        error: `Facebook auth failed (${response.status}). Page token may be expired. Error: ${err.substring(0, 200)}`,
+      };
+    }
+    return { success: false, error: `Facebook API error ${response.status}: ${err.substring(0, 200)}` };
+  }
+
+  const data: any = await response.json();
+  const postId = data.id;
+
+  return {
+    success: true,
+    post_id: postId,
+    url: postId ? `https://www.facebook.com/${postId}` : undefined,
+  };
+}
+
+function formatForFacebook(item: QueueItem): string {
+  let text = '';
+
+  if (item.title) {
+    text = `${item.title}\n\n`;
+  }
+  text += item.body;
+
+  if (item.hashtags?.length) {
+    const hashtagStr = item.hashtags.map(h => h.startsWith('#') ? h : `#${h}`).join(' ');
+    text += `\n\n${hashtagStr}`;
+  }
+
+  // Facebook doesn't have a strict character limit for page posts,
+  // but keep it reasonable (~63,206 char limit)
+  if (text.length > 5000) {
+    text = text.substring(0, 4997) + '...';
+  }
+
+  return text;
+}
+
+// ══════════════════════════════════════
+// INSTAGRAM — Content Publishing API
+// ══════════════════════════════════════
+
+async function postToInstagram(item: QueueItem, creds?: InstagramCreds): Promise<PostResult> {
+  if (!creds?.access_token || !creds?.ig_user_id) {
+    return {
+      success: false,
+      error: 'Instagram credentials incomplete. Need access_token and ig_user_id in claude_system_state instagram_credentials.',
+    };
+  }
+
+  // Instagram requires at least one image or video — no text-only posts
+  const imageUrl = item.media_urls?.[0] || item.metadata?.image_url;
+  if (!imageUrl) {
+    return {
+      success: false,
+      error: 'Instagram requires an image or video. No media_urls found on queue item. Add an image URL to media_urls or metadata.image_url.',
+    };
+  }
+
+  const caption = formatForInstagram(item);
+
+  // Step 1: Create media container
+  const containerParams = new URLSearchParams({
+    image_url: imageUrl,
+    caption,
+    access_token: creds.access_token,
+  });
+
+  const containerRes = await fetch(
+    `https://graph.facebook.com/v19.0/${creds.ig_user_id}/media?${containerParams}`,
+    { method: 'POST' },
+  );
+
+  if (!containerRes.ok) {
+    const err = await containerRes.text();
+    if (containerRes.status === 401 || containerRes.status === 403) {
+      return {
+        success: false,
+        error: `Instagram auth failed (${containerRes.status}). Token may be expired. Error: ${err.substring(0, 200)}`,
+      };
+    }
+    if (containerRes.status === 429) {
+      return { success: false, error: `Instagram rate limit hit. Retry later. ${err.substring(0, 100)}` };
+    }
+    return { success: false, error: `Instagram container creation failed ${containerRes.status}: ${err.substring(0, 200)}` };
+  }
+
+  const containerData: any = await containerRes.json();
+  const creationId = containerData.id;
+
+  if (!creationId) {
+    return { success: false, error: `Instagram container created but no ID returned: ${JSON.stringify(containerData).substring(0, 200)}` };
+  }
+
+  // Step 2: Publish the container
+  const publishParams = new URLSearchParams({
+    creation_id: creationId,
+    access_token: creds.access_token,
+  });
+
+  const publishRes = await fetch(
+    `https://graph.facebook.com/v19.0/${creds.ig_user_id}/media_publish?${publishParams}`,
+    { method: 'POST' },
+  );
+
+  if (!publishRes.ok) {
+    const err = await publishRes.text();
+    return { success: false, error: `Instagram publish failed ${publishRes.status}: ${err.substring(0, 200)}` };
+  }
+
+  const publishData: any = await publishRes.json();
+  const mediaId = publishData.id;
+
+  return {
+    success: true,
+    post_id: mediaId,
+    url: mediaId ? `https://www.instagram.com/p/${mediaId}` : undefined,
+  };
+}
+
+function formatForInstagram(item: QueueItem): string {
+  let text = '';
+
+  if (item.title) {
+    text = `${item.title}\n\n`;
+  }
+  text += item.body;
+
+  if (item.hashtags?.length) {
+    const hashtagStr = item.hashtags.map(h => h.startsWith('#') ? h : `#${h}`).join(' ');
+    text += `\n\n${hashtagStr}`;
+  }
+
+  // Instagram caption limit is 2,200 characters
+  if (text.length > 2200) {
+    text = text.substring(0, 2197) + '...';
+  }
+
+  return text;
+}
+
 // ── Credential loading ──
 
 async function loadCredentials(env: Env): Promise<PlatformCredentials> {
@@ -565,6 +779,30 @@ async function loadCredentials(env: Env): Promise<PlatformCredentials> {
     console.error(`Failed to load Threads credentials: ${err.message}`);
   }
 
+  try {
+    const facebookRows = await supabaseQuery(env, 'claude_system_state',
+      "state_key=eq.facebook_credentials&select=state_value");
+    if (facebookRows.length && facebookRows[0].state_value) {
+      creds.facebook = typeof facebookRows[0].state_value === 'string'
+        ? JSON.parse(facebookRows[0].state_value)
+        : facebookRows[0].state_value;
+    }
+  } catch (err: any) {
+    console.error(`Failed to load Facebook credentials: ${err.message}`);
+  }
+
+  try {
+    const instagramRows = await supabaseQuery(env, 'claude_system_state',
+      "state_key=eq.instagram_credentials&select=state_value");
+    if (instagramRows.length && instagramRows[0].state_value) {
+      creds.instagram = typeof instagramRows[0].state_value === 'string'
+        ? JSON.parse(instagramRows[0].state_value)
+        : instagramRows[0].state_value;
+    }
+  } catch (err: any) {
+    console.error(`Failed to load Instagram credentials: ${err.message}`);
+  }
+
   return creds;
 }
 
@@ -587,6 +825,8 @@ async function getQueueStats(env: Env): Promise<any> {
       twitter: !!creds.twitter?.api_key,
       linkedin: !!creds.linkedin?.access_token,
       threads: !!creds.threads?.user_access_token,
+      facebook: !!creds.facebook?.page_access_token,
+      instagram: !!creds.instagram?.access_token,
     },
   };
 }
