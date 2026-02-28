@@ -16,7 +16,7 @@
  *   serp_tracking (keywords) → [THIS WORKER] → serp_tracking (positions)
  *   serp_tracking → cmo-orchestrator (analysis + content strategy)
  *
- * Cron: every 6 hours (0 */6 * * *)
+ * Cron: every 6 hours (0 every-6h * * *)
  * Deploy: cd cloud-node/worker && wrangler deploy -c wrangler-serp.toml
  * Secrets: SUPABASE_URL, SUPABASE_KEY
  *
@@ -138,8 +138,8 @@ async function checkSERP(keyword: string, targetUrl: string, apiKey?: string): P
     return checkSERPviaAPI(keyword, apiKey);
   }
 
-  // Fallback: direct Google search (rate limited, may get blocked)
-  return checkSERPdirect(keyword, targetUrl);
+  // Fallback: no API key configured — skip gracefully
+  return checkSERPdirect(keyword);
 }
 
 async function checkSERPviaAPI(keyword: string, apiKey: string): Promise<{
@@ -178,33 +178,13 @@ async function checkSERPviaAPI(keyword: string, apiKey: string): Promise<{
   }
 }
 
-async function checkSERPdirect(keyword: string, targetUrl: string): Promise<{
+async function checkSERPdirect(keyword: string): Promise<{
   position: number | null;
   results: SERPResult[];
   source: string;
 }> {
-  // Use a simple Google search scrape (limited but functional)
-  try {
-    const query = encodeURIComponent(keyword);
-    const res = await fetch(`https://www.google.com/search?q=${query}&num=20&hl=en&gl=us`, {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        'Accept': 'text/html,application/xhtml+xml',
-        'Accept-Language': 'en-US,en;q=0.9',
-      },
-    });
-
-    if (!res.ok) {
-      return { position: null, results: [], source: 'google_error' };
-    }
-
-    const html = await res.text();
-    const results = parseGoogleResults(html);
-
-    return { position: null, results, source: 'google_direct' };
-  } catch (e) {
-    return { position: null, results: [], source: 'google_error' };
-  }
+  console.warn(`[serp] No SERP_API_KEY set — skipping keyword check for "${keyword}". Set SERP_API_KEY (ValueSERP) to enable tracking.`);
+  return { position: null, results: [], source: 'no_api_key' };
 }
 
 function parseGoogleResults(html: string): SERPResult[] {

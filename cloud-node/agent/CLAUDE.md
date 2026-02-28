@@ -130,7 +130,7 @@ LIMIT 20;
 
 ### 4. DEPLOY (landing page + checkout)
 - Create a landing page on Cloudflare Pages or as a Worker
-- Integrate Lemon Squeezy / Stripe checkout
+- Use browning-sales-engine checkout endpoint (PayPal Commerce + Coinbase Commerce — NO STRIPE EVER)
 - Set up webhook to track purchases in Supabase
 - Test the full purchase flow with Playwright
 
@@ -272,7 +272,7 @@ These golden nuggets are validated and priced. Start here:
 - Credentials: query `claude_system_state` key `github_credentials`
 
 ### Payment Processing
-- Credentials: query `claude_system_state` for `paypal`, `coinbase`, or set up Lemon Squeezy
+- Use browning-sales-engine checkout endpoint (PayPal Commerce + Coinbase Commerce — NO STRIPE EVER)
 
 ### Content Distribution
 - Credentials: query `claude_system_state` for platform-specific keys

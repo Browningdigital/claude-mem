@@ -1,0 +1,14 @@
+name = "browning-task-executor"
+main = "task-executor.ts"
+compatibility_date = "2026-02-01"
+
+# Polls cloud_node_tasks every 2 min, calls Claude, writes results back
+# This is the execution layer — without it the CMO orchestrator only queues
+[triggers]
+crons = ["*/2 * * * *"]
+
+# Secrets (set before deploying):
+#   wrangler secret put ANTHROPIC_API_KEY -c wrangler-executor.toml
+#   wrangler secret put SUPABASE_URL -c wrangler-executor.toml
+#   wrangler secret put SUPABASE_KEY -c wrangler-executor.toml
+#   wrangler secret put EXECUTOR_AUTH_TOKEN -c wrangler-executor.toml

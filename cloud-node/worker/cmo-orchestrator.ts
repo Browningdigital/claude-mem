@@ -161,6 +161,33 @@ async function gatherDailyReport(db: SupabaseClient): Promise<CMOReport> {
     db.query('golden_nuggets', 'select=id&status=in.(new,reviewed)&pipeline_stage=eq.backlog').catch(() => []),
   ]);
 
+  // A/B tests with enough data to declare a winner (run for 7+ days, 100+ impressions)
+  const abTests = await db.query('ab_test_results',
+    'select=test_id,variant_a_conversions,variant_b_conversions,variant_a_impressions,variant_b_impressions,started_at&status=eq.running&order=started_at.asc&limit=5'
+  ).catch(() => []);
+
+  const abWinners = abTests.filter((t: any) => {
+    const totalImpressions = (t.variant_a_impressions || 0) + (t.variant_b_impressions || 0);
+    const daysRunning = (Date.now() - new Date(t.started_at).getTime()) / (1000 * 60 * 60 * 24);
+    return totalImpressions >= 100 || daysRunning >= 7;
+  });
+
+  if (abWinners.length > 0) {
+    // Dispatch task to analyze and declare winners
+    await db.insert('cloud_node_tasks', {
+      prompt: `Analyze these A/B test results and declare winners. For each test, calculate conversion rate for both variants and recommend: (1) declare winner variant A, (2) declare winner variant B, or (3) extend test.
+
+Tests: ${JSON.stringify(abWinners, null, 2)}
+
+Output a JSON array: [{ test_id, winner: "A"|"B"|"extend", reason, confidence_pct }]`,
+      priority: 'high',
+      task_type: 'analysis',
+      status: 'queued',
+      created_at: new Date().toISOString(),
+    }).catch(() => {});
+    console.log(`[cmo] Queued A/B analysis for ${abWinners.length} mature test(s)`);
+  }
+
   const sum = (rows: any[]) => rows.reduce((s, r) => s + (parseFloat(r.amount) || 0), 0);
 
   return {
@@ -478,10 +505,7 @@ async function autoGenerateContent(db: SupabaseClient): Promise<string | null> {
     const recent = await db.query('content_queue',
       `select=id&product_id=eq.${product.id}&created_at=gte.${weekAgoISO()}&limit=1`
     ).catch(() => []);
-
-    if (recent.length === 0) {
-      needsContent.push(product);
-    }
+    if (recent.length === 0) needsContent.push(product);
   }
 
   if (needsContent.length === 0) return null;
@@ -491,28 +515,53 @@ async function autoGenerateContent(db: SupabaseClient): Promise<string | null> {
     'select=title,summary,content_pillars,score&status=eq.candidate&order=score.desc&limit=5'
   ).catch(() => []);
 
+  // Get SERP quick-win keywords (positions 4-20) to drive SEO-targeted content
+  const serpQuickWins = await db.query('serp_tracking',
+    'select=keyword,current_position,target_position&current_position=gte.4&current_position=lte.20&order=current_position.asc&limit=8'
+  ).catch(() => []);
+
+  // Get top performing content (engagement signal for feedback loop)
+  const topContent = await db.query('content_queue',
+    'select=platform,content,engagement&status=eq.posted&engagement=gte.10&order=engagement.desc&limit=5'
+  ).catch(() => []);
+
   const prompt = `## Auto Content Generation Task (CMO Orchestrator)
 
-Generate social media content for products that need promotion this week.
+Generate social media content for Browning Digital products that maximizes both reach and SEO impact.
 
-### Products needing content:
-${needsContent.map(p => `- **${p.name}** (${p.tier}, $${p.price}) — ${p.pillar}\n  Landing: ${p.landing_page_url || 'needs page'}\n  Description: ${p.description || 'none'}`).join('\n')}
+### Products needing content this week:
+${needsContent.map(p => `- **${p.name}** (${p.tier}, $${p.price}) — ${p.pillar}
+  Landing: ${p.landing_page_url || 'shop.browningdigital.com'}
+  Description: ${p.description || 'AI infrastructure tools for solo founders'}`).join('\n')}
 
-### Gold content for inspiration:
-${goldContent.map(g => `- "${g.title}" (score: ${g.score}, pillars: ${(g.content_pillars || []).join(', ')})\n  ${g.summary || ''}`).join('\n')}
+### SERP quick-win keywords (positions 4-20 — write content targeting these to push to #1-3):
+${serpQuickWins.length > 0
+  ? serpQuickWins.map((k: any) => `- "${k.keyword}" (currently #${k.current_position})`).join('\n')
+  : '- No SERP data yet — focus on high-intent buyer keywords for the products above'}
+
+### Gold content for inspiration (high-scoring raw content):
+${goldContent.map((g: any) => `- "${g.title}" (score: ${g.score})\n  ${g.summary || ''}`).join('\n')}
+
+### What's been performing (use these formats/angles):
+${topContent.length > 0
+  ? topContent.map((c: any) => `- [${c.platform}] ${c.content.substring(0, 100)}... (${c.engagement} engagements)`).join('\n')
+  : '- No engagement data yet — use proven hook formulas: "I replaced $X with AI", "Here is my exact stack", numbered lists'}
+
+### Output format (JSON array — required):
+Return a JSON array. Each object must have: platform, content, title (optional), product_id (optional).
+Example:
+[
+  { "platform": "twitter", "content": "Thread: How I...", "title": "Zero-cost AI stack", "product_id": "zero-cost-ai-kit" },
+  { "platform": "linkedin", "content": "Most founders...", "title": "Why agencies are obsolete" }
+]
 
 ### Rules:
-- 80% value content, 20% promotional
-- Each product gets 2-3 social posts (Twitter thread + LinkedIn post minimum)
-- Include hooks, key takeaways, and natural CTAs
-- Never mention credit repair, credit scores, or debt — stay in CMO scope
-- Queue all content into content_queue table with status 'queued'
-
-### Platforms to target:
-- Twitter/X: Threads and hot takes (2-3x per product)
-- LinkedIn: Framework posts and case studies (1x per product)
-
-Generate the SQL INSERT statements for content_queue.`;
+- 80% value, 20% promotional. Lead with insight, end with CTA to shop.browningdigital.com
+- Each product gets at least 2 posts minimum
+- At least 1 post must target a SERP quick-win keyword naturally
+- Twitter: punchy, under 280 chars OR a numbered thread (1/ 2/ 3/ format)
+- LinkedIn: 3-5 paragraphs, professional, framework or case study angle
+- NEVER mention credit repair, credit scores, debt — CMO scope only`;
 
   return prompt;
 }
@@ -729,18 +778,14 @@ async function handleHTTP(request: Request, env: Env): Promise<Response> {
     });
   }
 
-  // Manual trigger
   if (path === '/trigger' && request.method === 'POST') {
-    const body = await request.json() as { frequency?: string };
-    const freq = body.frequency || 'hourly';
+    const body = await request.json().catch(() => ({})) as { frequency?: string };
+    const freq = body.frequency ?? 'hourly';
     const fakeCron = freq === 'daily' ? '0 9 * * *' :
                      freq === 'weekly' ? '0 9 * * 1' :
                      freq === '15min' ? '*/15 * * * *' : '0 * * * *';
-
-    // Run async — don't block the response
-    const ctx = { waitUntil: (p: Promise<any>) => p };
-    ctx.waitUntil(handleCron(fakeCron, env));
-
+    // Fire async, don't await — respond immediately
+    handleCron(fakeCron, env).catch(e => console.error('Trigger error:', e));
     return new Response(JSON.stringify({ triggered: freq, timestamp: new Date().toISOString() }), {
       headers: { 'Content-Type': 'application/json' },
     });

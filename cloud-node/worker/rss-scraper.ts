@@ -15,7 +15,7 @@
  *   - Rate-limited: max 20 feeds per cycle, 10 items per feed
  *   - Scope enforcement: skips feeds/content related to credit repair
  *
- * Cron: every 30 minutes (*/30 * * * *)
+ * Cron: every 30 minutes (every-30-min)
  * Deploy: cd cloud-node/worker && wrangler deploy -c wrangler-rss.toml
  * Secrets: SUPABASE_URL, SUPABASE_KEY
  */
@@ -23,6 +23,7 @@
 interface Env {
   SUPABASE_URL: string;
   SUPABASE_KEY: string;
+  RSS_AUTH_TOKEN?: string;
 }
 
 interface ScraperConfig {
@@ -372,6 +373,13 @@ async function handleHTTP(request: Request, env: Env): Promise<Response> {
 
   // Manual trigger
   if (url.pathname === '/scrape' && request.method === 'POST') {
+    const auth = request.headers.get('Authorization');
+    if (!env.RSS_AUTH_TOKEN || auth !== `Bearer ${env.RSS_AUTH_TOKEN}`) {
+      return new Response(JSON.stringify({ error: 'Unauthorized' }), {
+        status: 401,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
     const result = await scrapeCycle(env);
     return new Response(JSON.stringify({ result }), {
       headers: { 'Content-Type': 'application/json' },
