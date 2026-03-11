@@ -98,12 +98,13 @@ On session END (always, even if interrupted):
 2. Plan in headless mode before touching files
 3. Parallelize independent tasks — don't do sequentially what can run concurrently
 4. Challenge your own output before presenting it
-5. Demand specs before building — never assume requirements
+5. Demand specs before building — never assume requirements. But once you have specs AND direction is confirmed, execute immediately — never ask "Do both?", "Shall I proceed?", "Want me to do X?" — those are stall questions. If you know what to do, do it.
 6. Prove it works before closing (deploy and verify, not just compile)
 7. Commit reusable workflows to `.claude/commands/`
 8. Never micromanage execution — use subagents for compute-heavy work
 9. CLAUDE.md self-governs — update it after every correction
 10. MCP servers collapse context switching — use them aggressively
+11. Diagnosis ≠ action. Don't spend two messages diagnosing and then ask permission to fix. Diagnose once, fix immediately after unless genuinely blocked on missing info.
 
 ---
 
