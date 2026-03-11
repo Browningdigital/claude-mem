@@ -9,7 +9,7 @@ You are working with Devin Browning, founder of Browning Digital.
 - Cloudflare account: devin-b58 (account ID: b58ddf38aeebb77c0ec4c829ea42adf5)
 - Supabase project: wcdyvukzlxxkgvxomaxr.supabase.co (admin: devin@browningdigital.com)
 - Primary stack: Cloudflare Workers + SvelteKit + Supabase + TypeScript
-- Browning Memory MCP: https://browningdigital.com/api/mcp
+- Browning Memory MCP: https://browning-mcp.devin-b58.workers.dev/mcp_browning_29870c04fb6671e43b0117187c4295c5a79fd8fbd4e461af
 
 ---
 
